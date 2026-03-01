@@ -61,7 +61,7 @@ class OKXExchange(BaseExchange):
 
         if signed:
             if not self.api_key or not self.api_secret or not self.api_passphrase:
-                logger.error("%s: missing OKX credentials", self.name)
+                logger.error("%s: отсутствуют API-данные OKX", self.name)
                 return None
 
             timestamp = self._timestamp_iso()
@@ -83,7 +83,7 @@ class OKXExchange(BaseExchange):
         try:
             response = self.session.request(method, f"{self.base_url}{path}", **request_kwargs)
         except requests.RequestException as exc:
-            logger.error("OKX %s %s request failed: %s", method, path, exc)
+            logger.error("OKX %s %s ошибка запроса: %s", method, path, exc)
             return None
 
         try:
@@ -95,7 +95,7 @@ class OKXExchange(BaseExchange):
             return payload
 
         logger.error(
-            "OKX %s %s error %s: %s",
+            "OKX %s %s ошибка %s: %s",
             method,
             path,
             response.status_code,
@@ -158,23 +158,23 @@ class OKXExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect requested", self.name)
+        logger.info("%s запрос на подключение", self.name)
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
-            msg = "OKX requires API key, API secret and passphrase"
+            msg = "Для OKX нужны API ключ, API секрет и пароль API"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         public_time = self._request("GET", "/api/v5/public/time")
         if not public_time:
-            self.error.emit(self.name, "OKX is unavailable")
+            self.error.emit(self.name, "OKX недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "OKX authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации OKX")
             return False
 
         self.balance = balance
@@ -186,16 +186,17 @@ class OKXExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

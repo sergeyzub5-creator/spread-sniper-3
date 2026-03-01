@@ -44,7 +44,7 @@ class BingXExchange(BaseExchange):
 
         if signed:
             if not self.api_key or not self.api_secret:
-                logger.error("%s: missing BingX credentials", self.name)
+                logger.error("%s: отсутствуют API-данные BingX", self.name)
                 return None
 
             params.setdefault("timestamp", int(time.time() * 1000))
@@ -58,7 +58,7 @@ class BingXExchange(BaseExchange):
         try:
             response = self.session.request(method, f"{self.base_url}{path}", **request_kwargs)
         except requests.RequestException as exc:
-            logger.error("BingX %s %s request failed: %s", method, path, exc)
+            logger.error("BingX %s %s ошибка запроса: %s", method, path, exc)
             return None
 
         try:
@@ -70,7 +70,7 @@ class BingXExchange(BaseExchange):
             return payload
 
         logger.error(
-            "BingX %s %s error %s: %s",
+            "BingX %s %s ошибка %s: %s",
             method,
             path,
             response.status_code,
@@ -125,23 +125,23 @@ class BingXExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect requested", self.name)
+        logger.info("%s запрос на подключение", self.name)
 
         if not self.api_key or not self.api_secret:
-            msg = "BingX requires API key and API secret"
+            msg = "Для BingX нужны API ключ и API секрет"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         contracts = self._request("GET", "/openApi/cswap/v1/market/contracts")
         if contracts is None:
-            self.error.emit(self.name, "BingX is unavailable")
+            self.error.emit(self.name, "BingX недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "BingX authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации BingX")
             return False
 
         self.balance = balance
@@ -153,16 +153,17 @@ class BingXExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

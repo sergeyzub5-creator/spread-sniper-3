@@ -44,7 +44,7 @@ class MEXCExchange(BaseExchange):
         headers = {"Content-Type": "application/json"}
         if signed:
             if not self.api_key or not self.api_secret:
-                logger.error("%s: missing MEXC credentials", self.name)
+                logger.error("%s: отсутствуют API-данные MEXC", self.name)
                 return None
 
             timestamp_ms = str(int(time.time() * 1000))
@@ -63,7 +63,7 @@ class MEXCExchange(BaseExchange):
         try:
             response = self.session.request(method, f"{self.base_url}{path}", **request_kwargs)
         except requests.RequestException as exc:
-            logger.error("MEXC %s %s request failed: %s", method, path, exc)
+            logger.error("MEXC %s %s ошибка запроса: %s", method, path, exc)
             return None
 
         try:
@@ -77,7 +77,7 @@ class MEXCExchange(BaseExchange):
             return payload
 
         logger.error(
-            "MEXC %s %s error %s: %s",
+            "MEXC %s %s ошибка %s: %s",
             method,
             path,
             response.status_code,
@@ -145,23 +145,23 @@ class MEXCExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect requested", self.name)
+        logger.info("%s запрос на подключение", self.name)
 
         if not self.api_key or not self.api_secret:
-            msg = "MEXC requires API key and API secret"
+            msg = "Для MEXC нужны API ключ и API секрет"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         ping = self._request("GET", "/api/v1/contract/ping")
         if not ping:
-            self.error.emit(self.name, "MEXC is unavailable")
+            self.error.emit(self.name, "MEXC недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "MEXC authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации MEXC")
             return False
 
         self.balance = balance
@@ -173,16 +173,17 @@ class MEXCExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

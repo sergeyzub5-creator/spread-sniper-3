@@ -22,7 +22,7 @@ class BitgetExchange(BaseExchange):
         self.base_url = "https://api.bitget.com"
         self.timeout = 10
         self.product_type = "USDT-FUTURES"
-        self.time_offset = self._get_server_time_offset()
+        self.time_offset = 0
         self.session = requests.Session()
 
     @staticmethod
@@ -80,11 +80,11 @@ class BitgetExchange(BaseExchange):
 
         if signed:
             if not self.api_key or not self.api_secret or not self.api_passphrase:
-                logger.error("%s: missing API credentials for Bitget signed request", self.name)
+                logger.error("%s: отсутствуют API-данные для подписанного запроса Bitget", self.name)
                 return None
 
             if not self._is_latin1(self.api_key) or not self._is_latin1(self.api_passphrase):
-                self.error.emit(self.name, "Bitget API key/passphrase must use latin characters")
+                self.error.emit(self.name, "API ключ/пароль Bitget должны быть на латинице")
                 return None
 
             timestamp = str(int(time.time() * 1000) + self.time_offset)
@@ -108,10 +108,10 @@ class BitgetExchange(BaseExchange):
         try:
             response = self.session.request(method, url, **request_kwargs)
         except (requests.RequestException, UnicodeError, ValueError) as exc:
-            logger.error("Bitget %s %s request failed: %s", method, path, exc)
+            logger.error("Bitget %s %s ошибка запроса: %s", method, path, exc)
             return None
         except Exception as exc:
-            logger.error("Bitget %s %s unexpected error: %s", method, path, exc)
+            logger.error("Bitget %s %s непредвиденная ошибка: %s", method, path, exc)
             return None
 
         try:
@@ -122,7 +122,7 @@ class BitgetExchange(BaseExchange):
         if response.ok and payload.get("code") == "00000":
             return payload
 
-        logger.error("Bitget %s %s error %s: %s", method, path, response.status_code, payload)
+        logger.error("Bitget %s %s ошибка %s: %s", method, path, response.status_code, payload)
         return None
 
     def _fetch_balance(self):
@@ -179,10 +179,10 @@ class BitgetExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect attempt...", self.name)
+        logger.info("%s попытка подключения...", self.name)
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
-            msg = "Bitget requires API key, API secret and passphrase"
+            msg = "Для Bitget нужны API ключ, API секрет и пароль API"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
@@ -196,13 +196,13 @@ class BitgetExchange(BaseExchange):
             signed=False,
         )
         if not contracts:
-            self.error.emit(self.name, "Bitget is unavailable or product type is invalid")
+            self.error.emit(self.name, "Bitget недоступна или указан неверный тип продукта")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "Bitget authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации Bitget")
             return False
 
         self.balance = balance
@@ -214,16 +214,17 @@ class BitgetExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

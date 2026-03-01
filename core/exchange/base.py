@@ -50,8 +50,8 @@ class BaseExchange(QObject):
 
     def get_status_text(self):
         if self.is_connected:
-            mode = "Demo" if self.testnet else "Real"
-            return f"{mode} | Balance: {self.balance:.2f} USDT | Positions: {len(self.positions)}"
+            mode = "Демо" if self.testnet else "Реал"
+            return f"{mode} | Баланс: {self.balance:.2f} USDT | Позиции: {len(self.positions)}"
         if self.last_error:
-            return f"Error: {self.last_error}"
-        return "Not connected"
+            return f"Ошибка: {self.last_error}"
+        return "Не подключено"

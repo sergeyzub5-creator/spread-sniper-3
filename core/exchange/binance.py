@@ -23,7 +23,7 @@ class BinanceExchange(BaseExchange):
         self.session = requests.Session()
         if api_key:
             self.session.headers.update({"X-MBX-APIKEY": api_key})
-        self.time_offset = self._get_server_time_offset()
+        self.time_offset = 0
 
     @staticmethod
     def _to_float(value, default=0.0):
@@ -63,7 +63,7 @@ class BinanceExchange(BaseExchange):
 
         if signed:
             if not self.api_key or not self.api_secret:
-                logger.error("%s: отсутствуют API credentials для signed-запроса", self.name)
+                logger.error("%s: отсутствуют API-данные для подписанного запроса", self.name)
                 return None
             params.setdefault("recvWindow", 5000)
             params["timestamp"] = int(time.time() * 1000) + self.time_offset
@@ -129,7 +129,7 @@ class BinanceExchange(BaseExchange):
         logger.info("%s попытка подключения...", self.name)
 
         if not self.api_key or not self.api_secret:
-            msg = "API Key и API Secret обязательны для Binance"
+            msg = "Для Binance нужны API ключ и API секрет"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False

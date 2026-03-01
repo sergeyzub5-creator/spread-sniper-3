@@ -54,7 +54,7 @@ class KuCoinExchange(BaseExchange):
         headers = {"Content-Type": "application/json"}
         if signed:
             if not self.api_key or not self.api_secret or not self.api_passphrase:
-                logger.error("%s: missing KuCoin credentials", self.name)
+                logger.error("%s: отсутствуют API-данные KuCoin", self.name)
                 return None
 
             timestamp_ms = str(int(time.time() * 1000))
@@ -78,7 +78,7 @@ class KuCoinExchange(BaseExchange):
         try:
             response = self.session.request(method, f"{self.base_url}{path}", **request_kwargs)
         except requests.RequestException as exc:
-            logger.error("KuCoin %s %s request failed: %s", method, path, exc)
+            logger.error("KuCoin %s %s ошибка запроса: %s", method, path, exc)
             return None
 
         try:
@@ -90,7 +90,7 @@ class KuCoinExchange(BaseExchange):
             return payload
 
         logger.error(
-            "KuCoin %s %s error %s: %s",
+            "KuCoin %s %s ошибка %s: %s",
             method,
             path,
             response.status_code,
@@ -136,23 +136,23 @@ class KuCoinExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect requested", self.name)
+        logger.info("%s запрос на подключение", self.name)
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
-            msg = "KuCoin requires API key, API secret and passphrase"
+            msg = "Для KuCoin нужны API ключ, API секрет и пароль API"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         timestamp = self._request("GET", "/api/v1/timestamp")
         if not timestamp:
-            self.error.emit(self.name, "KuCoin is unavailable")
+            self.error.emit(self.name, "KuCoin недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "KuCoin authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации KuCoin")
             return False
 
         self.balance = balance
@@ -164,16 +164,17 @@ class KuCoinExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

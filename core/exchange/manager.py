@@ -1,8 +1,9 @@
-from PySide6.QtCore import QObject, Signal
+﻿from PySide6.QtCore import QObject, Signal
 
-from core.exchange.factory import create_exchange
 from core.exchange.catalog import normalize_exchange_code
+from core.exchange.factory import create_exchange
 from core.utils.logger import get_logger
+from core.utils.thread_pool import ThreadManager, Worker
 
 logger = get_logger(__name__)
 
@@ -20,6 +21,9 @@ class ExchangeManager(QObject):
         self.exchanges = {}
         self.storage = ExchangeStorage()
         self._last_statuses = None
+        self._loading_exchanges = set()
+        self._connect_workers = {}
+
         self._load_saved_exchanges()
         self._emit_status_updated(force=True)
 
@@ -45,13 +49,15 @@ class ExchangeManager(QObject):
         self._safe_disconnect(exchange.pnl_updated, self._on_exchange_pnl_updated)
         self._safe_disconnect(exchange.error, self._on_exchange_error)
 
-    def _on_exchange_connected(self, _name):
-        exchange = self.exchanges.get(_name)
+    def _on_exchange_connected(self, name):
+        exchange = self.exchanges.get(name)
         if exchange:
             exchange.last_error = ""
+        self._loading_exchanges.discard(name)
         self._emit_status_updated()
 
-    def _on_exchange_disconnected(self, _name):
+    def _on_exchange_disconnected(self, name):
+        self._loading_exchanges.discard(name)
         self._emit_status_updated()
 
     def _on_exchange_balance_updated(self, _name, _balance):
@@ -70,6 +76,40 @@ class ExchangeManager(QObject):
             exchange.last_error = str(message)
         self._emit_status_updated()
 
+    def _on_connect_worker_error(self, name, error_text):
+        logger.error("Ошибка фонового подключения %s: %s", name, error_text)
+        exchange = self.exchanges.get(name)
+        if exchange and not exchange.last_error:
+            exchange.last_error = str(error_text)
+        self._emit_status_updated()
+
+    def _on_connect_worker_finished(self, name):
+        self._loading_exchanges.discard(name)
+        self._connect_workers.pop(name, None)
+        self._emit_status_updated(force=True)
+
+    def _start_connect_worker(self, name):
+        exchange = self.exchanges.get(name)
+        if exchange is None:
+            return False
+        if name in self._loading_exchanges:
+            return False
+        if exchange.is_connected:
+            return False
+
+        if not exchange.api_key or not exchange.api_secret:
+            return False
+
+        self._loading_exchanges.add(name)
+        self._emit_status_updated(force=True)
+
+        worker = Worker(exchange.connect)
+        self._connect_workers[name] = worker
+        worker.signals.error.connect(lambda err, ex_name=name: self._on_connect_worker_error(ex_name, err))
+        worker.signals.finished.connect(lambda ex_name=name: self._on_connect_worker_finished(ex_name))
+        ThreadManager().start(worker)
+        return True
+
     def _load_saved_exchanges(self):
         saved_data = self.storage.load_exchanges()
         for name, data in saved_data.items():
@@ -83,16 +123,12 @@ class ExchangeManager(QObject):
                 params["api_passphrase"] = data.get("api_passphrase")
 
             exchange = create_exchange(name, exchange_type, params)
-
             self.exchanges[name] = exchange
             self._wire_exchange_signals(exchange)
             self.exchange_added.emit(name)
 
             if params.get("api_key") and params.get("api_secret"):
-                try:
-                    exchange.connect()
-                except Exception as exc:
-                    logger.exception("Failed to connect saved exchange %s: %s", name, exc)
+                self._start_connect_worker(name)
 
     def _save_exchanges(self):
         self.storage.save_exchanges(self.exchanges)
@@ -107,7 +143,7 @@ class ExchangeManager(QObject):
     def add_exchange(self, exchange):
         name = exchange.name
         if name in self.exchanges:
-            logger.warning("Exchange %s already exists", name)
+            logger.warning("Биржа %s уже существует", name)
             return False
 
         self.exchanges[name] = exchange
@@ -120,6 +156,8 @@ class ExchangeManager(QObject):
     def update_exchange(self, name, exchange):
         if name not in self.exchanges:
             return False
+
+        self._loading_exchanges.discard(name)
 
         old_exchange = self.exchanges[name]
         if old_exchange.is_connected:
@@ -136,6 +174,9 @@ class ExchangeManager(QObject):
         if name not in self.exchanges:
             return False
 
+        self._loading_exchanges.discard(name)
+        self._connect_workers.pop(name, None)
+
         exchange = self.exchanges[name]
         if exchange.is_connected:
             exchange.disconnect()
@@ -146,6 +187,13 @@ class ExchangeManager(QObject):
         self._save_exchanges()
         self._emit_status_updated(force=True)
         return True
+
+    def connect_exchange_async(self, name):
+        return self._start_connect_worker(name)
+
+    def connect_all_async(self):
+        for name in self.exchanges.keys():
+            self._start_connect_worker(name)
 
     def get_exchange(self, name):
         return self.exchanges.get(name)
@@ -159,13 +207,19 @@ class ExchangeManager(QObject):
     def get_all_status(self):
         statuses = {}
         for name, ex in self.exchanges.items():
+            loading = name in self._loading_exchanges
+            status_text = ex.get_status_text()
+            if loading and not ex.is_connected:
+                status_text = "Загрузка..."
+
             statuses[name] = {
                 "connected": ex.is_connected,
+                "loading": loading,
                 "testnet": ex.testnet,
                 "balance": ex.balance,
                 "positions_count": len(ex.positions),
                 "pnl": ex.pnl,
-                "status_text": ex.get_status_text(),
+                "status_text": status_text,
             }
         return statuses
 
@@ -173,5 +227,8 @@ class ExchangeManager(QObject):
         for exchange in self.exchanges.values():
             if exchange.is_connected:
                 exchange.disconnect()
+
+        self._loading_exchanges.clear()
+        self._connect_workers.clear()
         self._save_exchanges()
         self._emit_status_updated(force=True)

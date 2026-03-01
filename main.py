@@ -23,7 +23,7 @@ if __name__ == "__main__":
     sys.excepthook = exception_hook
     
     app = QApplication(sys.argv)
-    app.setApplicationName("Spread Sniper 3")
+    app.setApplicationName("Спред Снайпер 3")
     app.setStyle('Fusion')
     
     window = MainWindow()

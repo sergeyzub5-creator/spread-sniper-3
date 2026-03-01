@@ -53,7 +53,7 @@ class GateExchange(BaseExchange):
         headers = {"Content-Type": "application/json"}
         if signed:
             if not self.api_key or not self.api_secret:
-                logger.error("%s: missing Gate credentials", self.name)
+                logger.error("%s: отсутствуют API-данные Gate", self.name)
                 return None
 
             timestamp = str(int(time.time()))
@@ -74,7 +74,7 @@ class GateExchange(BaseExchange):
         try:
             response = self.session.request(method, f"{self.base_url}{path}", **request_kwargs)
         except requests.RequestException as exc:
-            logger.error("Gate %s %s request failed: %s", method, path, exc)
+            logger.error("Gate %s %s ошибка запроса: %s", method, path, exc)
             return None
 
         try:
@@ -86,7 +86,7 @@ class GateExchange(BaseExchange):
             return payload
 
         logger.error(
-            "Gate %s %s error %s: %s",
+            "Gate %s %s ошибка %s: %s",
             method,
             path,
             response.status_code,
@@ -133,23 +133,23 @@ class GateExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s connect requested", self.name)
+        logger.info("%s запрос на подключение", self.name)
 
         if not self.api_key or not self.api_secret:
-            msg = "Gate requires API key and API secret"
+            msg = "Для Gate нужны API ключ и API секрет"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         contracts = self._request("GET", f"/api/v4/futures/{self.settle}/contracts")
         if contracts is None:
-            self.error.emit(self.name, "Gate is unavailable")
+            self.error.emit(self.name, "Gate недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "Gate authentication failed")
+            self.error.emit(self.name, "Ошибка авторизации Gate")
             return False
 
         self.balance = balance
@@ -161,16 +161,17 @@ class GateExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s connected", self.name)
+        logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s disconnected", self.name)
+        logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s subscribe %s", self.name, symbol)
+        logger.info("%s подписка на %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s unsubscribe %s", self.name, symbol)
+        logger.info("%s отписка от %s", self.name, symbol)
+

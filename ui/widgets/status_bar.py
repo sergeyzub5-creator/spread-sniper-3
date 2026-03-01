@@ -1,4 +1,4 @@
-import socket
+﻿import socket
 from datetime import datetime
 
 from PySide6.QtCore import QTimer, Qt
@@ -32,7 +32,6 @@ class NetworkStatusBar(QFrame):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(8)
 
-        # Visible "lamp" indicator as a filled circle widget.
         self.net_indicator = QLabel("")
         self.net_indicator.setFixedSize(10, 10)
         self.net_indicator.setStyleSheet(
@@ -40,7 +39,7 @@ class NetworkStatusBar(QFrame):
         )
         layout.addWidget(self.net_indicator)
 
-        self.wifi_label = QLabel("Network: checking...")
+        self.wifi_label = QLabel("Сеть: проверка...")
         self.wifi_label.setStyleSheet("color: #a0b0c0;")
         layout.addWidget(self.wifi_label)
 
@@ -66,7 +65,6 @@ class NetworkStatusBar(QFrame):
         self.network_timer.timeout.connect(self._trigger_network_check)
         self.network_timer.start(5000)
 
-        # Check immediately on startup.
         self._trigger_network_check()
 
     def _update_clock(self):
@@ -101,16 +99,16 @@ class NetworkStatusBar(QFrame):
             self.net_indicator.setStyleSheet(
                 "background-color: #22c55e; border: 1px solid #15803d; border-radius: 5px;"
             )
-            self.wifi_label.setText("Network: online")
+            self.wifi_label.setText("Сеть: онлайн")
             self.wifi_label.setStyleSheet("color: #7ec8a6;")
         else:
             self.net_indicator.setStyleSheet(
                 "background-color: #ef4444; border: 1px solid #b91c1c; border-radius: 5px;"
             )
-            self.wifi_label.setText("Network: offline")
+            self.wifi_label.setText("Сеть: офлайн")
             self.wifi_label.setStyleSheet("color: #e06c75;")
 
     def show_error(self, message):
-        self.error_label.setText(f"Warning: {message}")
+        self.error_label.setText(f"Внимание: {message}")
         self.error_label.show()
         QTimer.singleShot(5000, self.error_label.hide)

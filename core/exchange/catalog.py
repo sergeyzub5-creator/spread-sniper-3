@@ -14,7 +14,7 @@ EXCHANGE_ALIASES = {
 EXCHANGE_CATALOG: Dict[str, dict] = {
     "binance": {
         "code": "binance",
-        "title": "Binance Futures",
+        "title": "Binance фьючерсы",
         "base_name": "Binance",
         "short": "BN",
         "color": "#F3BA2F",
@@ -22,7 +22,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "bitget": {
         "code": "bitget",
-        "title": "Bitget Futures",
+        "title": "Bitget фьючерсы",
         "base_name": "Bitget",
         "short": "BG",
         "color": "#00C1D4",
@@ -30,7 +30,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "bybit": {
         "code": "bybit",
-        "title": "Bybit Futures",
+        "title": "Bybit фьючерсы",
         "base_name": "Bybit",
         "short": "BY",
         "color": "#F7A600",
@@ -38,7 +38,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "okx": {
         "code": "okx",
-        "title": "OKX Futures",
+        "title": "OKX фьючерсы",
         "base_name": "OKX",
         "short": "OK",
         "color": "#111111",
@@ -46,7 +46,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "mexc": {
         "code": "mexc",
-        "title": "MEXC Futures",
+        "title": "MEXC фьючерсы",
         "base_name": "MEXC",
         "short": "MX",
         "color": "#2EC5B6",
@@ -54,7 +54,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "kucoin": {
         "code": "kucoin",
-        "title": "KuCoin Futures",
+        "title": "KuCoin фьючерсы",
         "base_name": "KuCoin",
         "short": "KC",
         "color": "#1FC7A3",
@@ -62,7 +62,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "gate": {
         "code": "gate",
-        "title": "Gate Futures",
+        "title": "Gate фьючерсы",
         "base_name": "Gate",
         "short": "GT",
         "color": "#2F54EB",
@@ -70,7 +70,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
     },
     "bingx": {
         "code": "bingx",
-        "title": "BingX Futures",
+        "title": "BingX фьючерсы",
         "base_name": "BingX",
         "short": "BX",
         "color": "#005BFF",
@@ -104,8 +104,8 @@ def get_exchange_meta(exchange_code: str | None) -> dict:
         return EXCHANGE_CATALOG[code]
     return {
         "code": code,
-        "title": code.upper() if code and code != "unknown" else "Unknown Exchange",
-        "base_name": code.capitalize() if code and code != "unknown" else "Exchange",
+        "title": code.upper() if code and code != "unknown" else "Неизвестная биржа",
+        "base_name": code.capitalize() if code and code != "unknown" else "Биржа",
         "short": "EX",
         "color": "#6C7A89",
         "requires_passphrase": False,

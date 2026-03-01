@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+﻿from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.exchange.catalog import get_exchange_meta, normalize_exchange_code, requires_passphrase
@@ -54,8 +55,8 @@ class ExchangePanel(QFrame):
 
         header = QHBoxLayout()
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=18))
-        self.icon_label.setFixedSize(18, 18)
+        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=46))
+        self.icon_label.setFixedSize(46, 46)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.name_label = QLabel(self.exchange_name)
@@ -65,7 +66,7 @@ class ExchangePanel(QFrame):
         self.name_label.setFont(font)
         self.name_label.setMinimumWidth(80)
 
-        self.status_label = QLabel("Not connected")
+        self.status_label = QLabel("Не подключено")
         self.status_label.setStyleSheet("color: #a0b0c0; font-size: 11px;")
         self.status_label.setMinimumWidth(120)
 
@@ -75,36 +76,50 @@ class ExchangePanel(QFrame):
         header.addStretch()
         layout.addLayout(header)
 
-        stats_layout = QHBoxLayout()
-        self.balance_label = QLabel("Balance: -- USDT")
+        self.stats_widget = QWidget()
+        stats_layout = QHBoxLayout(self.stats_widget)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        stats_layout.setSpacing(8)
+        self.balance_label = QLabel("Баланс: -- USDT")
         self.balance_label.setStyleSheet("color: #7ec8a6; font-size: 12px; font-weight: bold;")
-        self.positions_label = QLabel("Positions: --")
+        self.positions_label = QLabel("Позиции: --")
         self.positions_label.setStyleSheet("color: #e5c07b; font-size: 12px;")
+        self.pnl_label = QLabel("ПнЛ: 0.00 USDT")
+        self.pnl_label.setStyleSheet("color: #a0b0c0; font-size: 12px; font-weight: bold;")
         stats_layout.addWidget(self.balance_label)
         stats_layout.addWidget(self.positions_label)
+        stats_layout.addWidget(self.pnl_label)
         stats_layout.addStretch()
-        layout.addLayout(stats_layout)
+        layout.addWidget(self.stats_widget)
 
-        self.api_group = QGroupBox(f"API credentials · {self.exchange_meta['title']}")
+        if self.is_new:
+            self.stats_widget.setVisible(False)
+            self.name_label.setVisible(False)
+            self.icon_label.setFixedSize(64, 64)
+            self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=64))
+            self.status_label.setText("")
+            self.status_label.setVisible(False)
+
+        self.api_group = QGroupBox(f"API-данные · {self.exchange_meta['title']}")
         api_layout = QHBoxLayout()
         api_layout.setSpacing(5)
 
         self.api_key_input = QLineEdit()
-        self.api_key_input.setPlaceholderText("API Key")
+        self.api_key_input.setPlaceholderText("API ключ")
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key_input.setMinimumWidth(180)
 
         self.api_secret_input = QLineEdit()
-        self.api_secret_input.setPlaceholderText("API Secret")
+        self.api_secret_input.setPlaceholderText("API секрет")
         self.api_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_secret_input.setMinimumWidth(180)
 
         self.passphrase_input = QLineEdit()
-        self.passphrase_input.setPlaceholderText("Passphrase")
+        self.passphrase_input.setPlaceholderText("Пароль API")
         self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.passphrase_input.setMinimumWidth(120)
 
-        self.testnet_check = QCheckBox("Demo mode")
+        self.testnet_check = QCheckBox("Демо-режим")
         self.testnet_check.setStyleSheet("color: #e5c07b;")
         self.testnet_check.stateChanged.connect(self._on_testnet_changed)
 
@@ -120,7 +135,7 @@ class ExchangePanel(QFrame):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(5)
 
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = QPushButton("Подключить")
         self.connect_btn.setMinimumWidth(100)
         self.connect_btn.setStyleSheet(
             """
@@ -130,7 +145,7 @@ class ExchangePanel(QFrame):
         )
         self.connect_btn.clicked.connect(self._on_connect)
 
-        self.disconnect_btn = QPushButton("Disconnect")
+        self.disconnect_btn = QPushButton("Отключить")
         self.disconnect_btn.setMinimumWidth(100)
         self.disconnect_btn.setStyleSheet(
             """
@@ -140,7 +155,7 @@ class ExchangePanel(QFrame):
         )
         self.disconnect_btn.clicked.connect(lambda: self.disconnect_clicked.emit(self.exchange_name))
 
-        self.edit_btn = QPushButton("Edit")
+        self.edit_btn = QPushButton("Изменить")
         self.edit_btn.setMinimumWidth(100)
         self.edit_btn.setStyleSheet(
             """
@@ -150,7 +165,7 @@ class ExchangePanel(QFrame):
         )
         self.edit_btn.clicked.connect(lambda: self.set_edit_mode(True))
 
-        self.remove_btn = QPushButton("Remove")
+        self.remove_btn = QPushButton("Удалить")
         self.remove_btn.setMinimumWidth(100)
         self.remove_btn.setStyleSheet(
             """
@@ -160,7 +175,7 @@ class ExchangePanel(QFrame):
         )
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.exchange_name))
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton("Отмена")
         self.cancel_btn.setMinimumWidth(100)
         self.cancel_btn.setStyleSheet(
             """
@@ -184,9 +199,9 @@ class ExchangePanel(QFrame):
 
     def _update_passphrase_hint(self):
         if requires_passphrase(self.exchange_type):
-            self.passphrase_input.setPlaceholderText("Passphrase (required)")
+            self.passphrase_input.setPlaceholderText("Пароль API (обязательно)")
         else:
-            self.passphrase_input.setPlaceholderText("Passphrase (optional)")
+            self.passphrase_input.setPlaceholderText("Пароль API (необязательно)")
 
     def set_edit_mode(self, edit_mode):
         self.edit_mode = edit_mode
@@ -194,20 +209,27 @@ class ExchangePanel(QFrame):
 
     def _update_ui_state(self):
         if self.is_connected:
-            self.status_label.setText("Connected")
+            self.status_label.setText("Подключено")
             self.status_label.setStyleSheet("color: #7ec8a6; font-size: 11px;")
+            self.status_label.setVisible(True)
             self.connect_btn.setVisible(False)
             self.disconnect_btn.setVisible(True)
             self.edit_btn.setVisible(False)
             self.api_group.setVisible(False)
         else:
-            self.status_label.setText("Not connected")
-            self.status_label.setStyleSheet("color: #a0b0c0; font-size: 11px;")
-            self.balance_label.setText("Balance: -- USDT")
-            self.positions_label.setText("Positions: --")
+            if self.is_new:
+                self.status_label.setText("")
+                self.status_label.setVisible(False)
+            else:
+                self.status_label.setText("Не подключено")
+                self.status_label.setStyleSheet("color: #a0b0c0; font-size: 11px;")
+                self.status_label.setVisible(True)
+            self.balance_label.setText("Баланс: -- USDT")
+            self.positions_label.setText("Позиции: --")
+            self._set_pnl_display(0.0, 0)
 
             if self.edit_mode:
-                self.connect_btn.setText("Save" if self.is_new else "Connect")
+                self.connect_btn.setText("Добавить" if self.is_new else "Подключить")
                 self.connect_btn.setVisible(True)
                 self.disconnect_btn.setVisible(False)
                 self.edit_btn.setVisible(False)
@@ -221,6 +243,27 @@ class ExchangePanel(QFrame):
                 self.api_group.setVisible(False)
 
         self.remove_btn.setVisible(not self.is_new)
+
+    def _set_pnl_display(self, pnl, positions_count):
+        if positions_count <= 0:
+            display_pnl = 0.0
+            color = "#a0b0c0"
+            text = f"ПнЛ: {display_pnl:,.2f} USDT"
+        elif pnl > 0:
+            display_pnl = pnl
+            color = "#7ec8a6"
+            text = f"ПнЛ: +{display_pnl:,.2f} USDT"
+        elif pnl < 0:
+            display_pnl = pnl
+            color = "#e06c75"
+            text = f"ПнЛ: {display_pnl:,.2f} USDT"
+        else:
+            display_pnl = 0.0
+            color = "#a0b0c0"
+            text = f"ПнЛ: {display_pnl:,.2f} USDT"
+
+        self.pnl_label.setText(text)
+        self.pnl_label.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: bold;")
 
     def _on_cancel(self):
         if self.is_new:
@@ -242,6 +285,7 @@ class ExchangePanel(QFrame):
     def _show_input_error(self, message):
         self.status_label.setText(message)
         self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+        self.status_label.setVisible(True)
 
     def _on_connect(self):
         if not self.edit_mode:
@@ -251,11 +295,11 @@ class ExchangePanel(QFrame):
         api_secret = self.api_secret_input.text().strip()
 
         if not api_key or not api_secret:
-            self._show_input_error("API key and secret are required")
+            self._show_input_error("API ключ и API секрет обязательны")
             return
 
         if not self._is_ascii(api_key) or not self._is_ascii(api_secret):
-            self._show_input_error("Invalid key format: use latin symbols only")
+            self._show_input_error("Неверный формат ключа: используйте только латиницу")
             return
 
         params = {
@@ -267,29 +311,34 @@ class ExchangePanel(QFrame):
         if requires_passphrase(self.exchange_type):
             passphrase = self.passphrase_input.text().strip()
             if not passphrase:
-                self._show_input_error("Passphrase is required")
+                self._show_input_error("Пароль API обязателен")
                 return
             if not self._is_ascii(passphrase):
-                self._show_input_error("Invalid passphrase format: use latin symbols only")
+                self._show_input_error("Неверный формат пароля API: используйте только латиницу")
                 return
             params["api_passphrase"] = passphrase
         else:
             passphrase = self.passphrase_input.text().strip()
             if passphrase:
                 if not self._is_ascii(passphrase):
-                    self._show_input_error("Invalid passphrase format: use latin symbols only")
+                    self._show_input_error("Неверный формат пароля API: используйте только латиницу")
                     return
                 params["api_passphrase"] = passphrase
 
         self.connect_clicked.emit(self.exchange_name, params)
 
     def update_status(self, status):
+        if self.is_new:
+            return
+
         snapshot = {
             "connected": bool(status.get("connected", False)),
+            "loading": bool(status.get("loading", False)),
             "testnet": bool(status.get("testnet", False)),
             "balance": float(status.get("balance", 0) or 0),
             "positions_count": int(status.get("positions_count", 0) or 0),
             "pnl": float(status.get("pnl", 0) or 0),
+            "status_text": str(status.get("status_text", "") or ""),
         }
 
         if snapshot == self._last_status_snapshot:
@@ -299,13 +348,30 @@ class ExchangePanel(QFrame):
         self.is_connected = snapshot["connected"]
 
         if self.is_connected:
-            mode = "Demo" if snapshot["testnet"] else "Real"
-            self.status_label.setText(f"Connected · {mode}")
+            mode = "Демо" if snapshot["testnet"] else "Реал"
+            self.status_label.setText(f"Подключено · {mode}")
             self.status_label.setStyleSheet("color: #7ec8a6; font-size: 11px;")
-            self.balance_label.setText(f"Balance: {snapshot['balance']:,.2f} USDT")
-            self.positions_label.setText(f"Positions: {snapshot['positions_count']}")
+            self.balance_label.setText(f"Баланс: {snapshot['balance']:,.2f} USDT")
+            self.positions_label.setText(f"Позиции: {snapshot['positions_count']}")
+            self._set_pnl_display(snapshot["pnl"], snapshot["positions_count"])
+        else:
+            status_text = snapshot["status_text"].strip() or "Не подключено"
+            lower_text = status_text.lower()
 
-        # Rebuild heavy visibility/layout state only on connect/disconnect flip.
+            if snapshot["loading"]:
+                status_text = "Загрузка..."
+                color = "#7aa2f7"
+            elif "ошибка" in lower_text or "не реализовано" in lower_text:
+                color = "#e06c75"
+            else:
+                color = "#a0b0c0"
+
+            self.status_label.setText(status_text)
+            self.status_label.setStyleSheet(f"color: {color}; font-size: 11px;")
+            self.balance_label.setText("Баланс: -- USDT")
+            self.positions_label.setText("Позиции: --")
+            self._set_pnl_display(0.0, 0)
+
         if prev_connected != self.is_connected:
             self._update_ui_state()
 
