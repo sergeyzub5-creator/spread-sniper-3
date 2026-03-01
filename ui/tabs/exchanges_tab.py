@@ -52,7 +52,7 @@ class ExchangePickerDialog(QDialog):
                 background-color: #1e2429;
             }
             QListWidget::item:selected {
-                background-color: #2a3a5a;
+                background-color: rgba(42, 58, 90, 72);
                 color: #7aa2f7;
             }
             QPushButton {
@@ -93,13 +93,13 @@ class ExchangePickerDialog(QDialog):
         layout.addWidget(title)
 
         self.list_widget = QListWidget()
-        self.list_widget.setIconSize(QSize(52, 52))
+        self.list_widget.setIconSize(QSize(31, 31))
         self.list_widget.setSpacing(4)
         self.list_widget.itemDoubleClicked.connect(lambda _item: self._accept_selected())
 
         for code in EXCHANGE_ORDER:
             meta = get_exchange_meta(code)
-            item = QListWidgetItem(build_exchange_icon(code, size=52), meta["title"])
+            item = QListWidgetItem(build_exchange_icon(code, size=31), meta["title"])
             item.setData(Qt.ItemDataRole.UserRole, code)
             self.list_widget.addItem(item)
 

@@ -55,8 +55,8 @@ class ExchangePanel(QFrame):
 
         header = QHBoxLayout()
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=46))
-        self.icon_label.setFixedSize(46, 46)
+        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=42))
+        self.icon_label.setFixedSize(42, 42)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.name_label = QLabel(self.exchange_name)
@@ -95,8 +95,8 @@ class ExchangePanel(QFrame):
         if self.is_new:
             self.stats_widget.setVisible(False)
             self.name_label.setVisible(False)
-            self.icon_label.setFixedSize(64, 64)
-            self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=64))
+            self.icon_label.setFixedSize(72, 72)
+            self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=72))
             self.status_label.setText("")
             self.status_label.setVisible(False)
 

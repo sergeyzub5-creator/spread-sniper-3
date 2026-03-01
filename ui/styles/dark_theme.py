@@ -26,7 +26,7 @@
             margin-right: 2px;
         }
         QTabBar::tab:selected {
-            background-color: #14181c;
+            background-color: rgba(20, 24, 28, 128);
             color: #7aa2f7;
         }
         QPushButton {
