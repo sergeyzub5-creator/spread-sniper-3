@@ -44,5 +44,12 @@ venv\Scripts\python.exe main.py
 
 - `core/exchange/` - exchange adapters and manager
 - `core/data/` - persistence
+- `core/i18n/` - language manager and translation dictionaries
 - `ui/` - PySide6 interface
+- `ui/styles/theme_manager.py` - centralized theme tokens and style builders
 - `scripts/` - utility scripts (snapshot, github backup, safe codex launcher)
+
+## Development Rules
+
+- `PROJECT_PASSPORT.md` - full architecture map of the project.
+- `DEVELOPMENT_STANDARDS.md` - mandatory rules for new modules (themes + languages).

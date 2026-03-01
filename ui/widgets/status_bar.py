@@ -1,10 +1,12 @@
-﻿import socket
+import socket
 from datetime import datetime
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel
 
+from core.i18n import tr
 from core.utils.thread_pool import ThreadManager, Worker
+from ui.styles import theme_color
 
 
 class NetworkStatusBar(QFrame):
@@ -14,19 +16,6 @@ class NetworkStatusBar(QFrame):
         self._check_in_progress = False
 
         self.setFrameStyle(QFrame.Shape.NoFrame)
-        self.setStyleSheet(
-            """
-            QFrame {
-                background-color: #0a0c10;
-                border-top: 2px solid #2a343c;
-                padding: 4px 10px;
-            }
-            QLabel {
-                color: #a0b0c0;
-                font-size: 13px;
-            }
-        """
-        )
 
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 4, 10, 4)
@@ -35,12 +24,12 @@ class NetworkStatusBar(QFrame):
         self.net_indicator = QLabel("")
         self.net_indicator.setFixedSize(10, 10)
         self.net_indicator.setStyleSheet(
-            "background-color: #a0b0c0; border: 1px solid #5a6570; border-radius: 5px;"
+            f"background-color: {theme_color('net_idle')}; "
+            f"border: 1px solid {theme_color('net_idle_border')}; border-radius: 5px;"
         )
         layout.addWidget(self.net_indicator)
 
-        self.wifi_label = QLabel("Сеть: проверка...")
-        self.wifi_label.setStyleSheet("color: #a0b0c0;")
+        self.wifi_label = QLabel("")
         layout.addWidget(self.wifi_label)
 
         layout.addStretch()
@@ -50,7 +39,6 @@ class NetworkStatusBar(QFrame):
         layout.addWidget(self.time_label)
 
         self.error_label = QLabel()
-        self.error_label.setStyleSheet("color: #e06c75;")
         self.error_label.hide()
         layout.addWidget(self.error_label)
 
@@ -65,6 +53,8 @@ class NetworkStatusBar(QFrame):
         self.network_timer.timeout.connect(self._trigger_network_check)
         self.network_timer.start(5000)
 
+        self.apply_theme()
+        self.retranslate_ui()
         self._trigger_network_check()
 
     def _update_clock(self):
@@ -95,20 +85,54 @@ class NetworkStatusBar(QFrame):
             return
 
         self._online = online
-        if online:
+        self._apply_network_state()
+
+    def _apply_network_state(self):
+        if self._online is None:
             self.net_indicator.setStyleSheet(
-                "background-color: #22c55e; border: 1px solid #15803d; border-radius: 5px;"
+                f"background-color: {theme_color('net_idle')}; "
+                f"border: 1px solid {theme_color('net_idle_border')}; border-radius: 5px;"
             )
-            self.wifi_label.setText("Сеть: онлайн")
-            self.wifi_label.setStyleSheet("color: #7ec8a6;")
+            self.wifi_label.setText(tr("status.net_checking"))
+            self.wifi_label.setStyleSheet(f"color: {theme_color('text_muted')};")
+            return
+
+        if self._online:
+            self.net_indicator.setStyleSheet(
+                f"background-color: {theme_color('net_online')}; "
+                f"border: 1px solid {theme_color('net_online_border')}; border-radius: 5px;"
+            )
+            self.wifi_label.setText(tr("status.net_online"))
+            self.wifi_label.setStyleSheet(f"color: {theme_color('success')};")
         else:
             self.net_indicator.setStyleSheet(
-                "background-color: #ef4444; border: 1px solid #b91c1c; border-radius: 5px;"
+                f"background-color: {theme_color('net_offline')}; "
+                f"border: 1px solid {theme_color('net_offline_border')}; border-radius: 5px;"
             )
-            self.wifi_label.setText("Сеть: офлайн")
-            self.wifi_label.setStyleSheet("color: #e06c75;")
+            self.wifi_label.setText(tr("status.net_offline"))
+            self.wifi_label.setStyleSheet(f"color: {theme_color('danger')};")
+
+    def apply_theme(self):
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {theme_color('window_bg')};
+                border-top: 2px solid {theme_color('border')};
+                padding: 4px 10px;
+            }}
+            QLabel {{
+                color: {theme_color('text_muted')};
+                font-size: 13px;
+            }}
+        """
+        )
+        self.error_label.setStyleSheet(f"color: {theme_color('danger')};")
+        self._apply_network_state()
+
+    def retranslate_ui(self):
+        self._apply_network_state()
 
     def show_error(self, message):
-        self.error_label.setText(f"Внимание: {message}")
+        self.error_label.setText(tr("status.warning_prefix", message=message))
         self.error_label.show()
         QTimer.singleShot(5000, self.error_label.hide)

@@ -1,5 +1,6 @@
-﻿from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal
 
+from core.i18n import tr
 from core.utils.thread_pool import ThreadManager, Worker
 
 
@@ -50,8 +51,11 @@ class BaseExchange(QObject):
 
     def get_status_text(self):
         if self.is_connected:
-            mode = "Демо" if self.testnet else "Реал"
-            return f"{mode} | Баланс: {self.balance:.2f} USDT | Позиции: {len(self.positions)}"
+            mode = tr("mode.demo") if self.testnet else tr("mode.real")
+            balance = tr("label.balance", value=f"{self.balance:.2f}")
+            positions = tr("label.positions", value=len(self.positions))
+            return f"{mode} | {balance} | {positions}"
         if self.last_error:
             return f"Ошибка: {self.last_error}"
-        return "Не подключено"
+        return tr("status.disconnected")
+

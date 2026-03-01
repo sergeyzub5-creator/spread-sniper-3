@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.exchange.catalog import EXCHANGE_ORDER, get_exchange_meta, normalize_exchange_code
+from core.i18n import tr
+from ui.styles import button_style, theme_color
 from ui.widgets.exchange_badge import build_exchange_icon
 from ui.widgets.exchange_panel import ExchangePanel
 
@@ -21,67 +23,50 @@ class ExchangePickerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.selected_code = None
-        self.setWindowTitle("Выбор биржи")
+        self.setWindowTitle(tr("exchange_picker.title"))
         self.setMinimumSize(500, 420)
         self.resize(540, 460)
         self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #14181c;
-                color: #e8eef2;
-            }
-            QLabel {
-                color: #e8eef2;
+            f"""
+            QDialog {{
+                background-color: {theme_color('surface')};
+                color: {theme_color('text_primary')};
+            }}
+            QLabel {{
+                color: {theme_color('text_primary')};
                 font-size: 14px;
                 font-weight: bold;
-            }
-            QListWidget {
-                background-color: #0f1318;
-                border: 1px solid #2a343c;
+            }}
+            QListWidget {{
+                background-color: {theme_color('window_bg')};
+                border: 1px solid {theme_color('border')};
                 border-radius: 6px;
                 padding: 6px;
-                color: #e8eef2;
+                color: {theme_color('text_primary')};
                 font-size: 13px;
                 outline: none;
-            }
-            QListWidget::item {
+            }}
+            QListWidget::item {{
                 padding: 10px 12px;
                 border-radius: 4px;
-            }
-            QListWidget::item:hover {
-                background-color: #1e2429;
-            }
-            QListWidget::item:selected {
-                background-color: rgba(42, 58, 90, 72);
-                color: #7aa2f7;
-            }
-            QPushButton {
+            }}
+            QListWidget::item:hover {{
+                background-color: {theme_color('surface_alt')};
+            }}
+            QListWidget::item:selected {{
+                background-color: {theme_color('selection_bg_soft')};
+                color: {theme_color('accent')};
+            }}
+            QPushButton {{
                 border-radius: 4px;
                 padding: 7px 14px;
                 min-width: 110px;
-            }
-            QPushButton#primaryButton {
-                background-color: #2a3a5a;
-                color: #7aa2f7;
-                border: 1px solid #7aa2f7;
-                font-weight: bold;
-            }
-            QPushButton#primaryButton:hover {
-                background-color: #3a4a7a;
-            }
-            QPushButton#secondaryButton {
-                background-color: #2a343c;
-                color: #a0b0c0;
-                border: 1px solid #a0b0c0;
-            }
-            QPushButton#secondaryButton:hover {
-                background-color: #3a4a5a;
-            }
-            QPushButton:disabled {
-                color: #6c7680;
-                border-color: #3b444c;
-                background-color: #1c2329;
-            }
+            }}
+            QPushButton:disabled {{
+                color: {theme_color('text_muted')};
+                border-color: {theme_color('border')};
+                background-color: {theme_color('surface_alt')};
+            }}
         """
         )
 
@@ -89,7 +74,7 @@ class ExchangePickerDialog(QDialog):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        title = QLabel("Выберите биржу для добавления")
+        title = QLabel(tr("exchange_picker.prompt"))
         layout.addWidget(title)
 
         self.list_widget = QListWidget()
@@ -111,15 +96,15 @@ class ExchangePickerDialog(QDialog):
         buttons_row = QHBoxLayout()
         buttons_row.addStretch()
 
-        self.add_btn = QPushButton("Добавить")
-        self.add_btn.setObjectName("primaryButton")
+        self.add_btn = QPushButton(tr("action.add"))
         self.add_btn.clicked.connect(self._accept_selected)
+        self.add_btn.setStyleSheet(button_style("primary", padding="7px 14px", bold=True))
         self.add_btn.setEnabled(self.list_widget.currentItem() is not None)
         buttons_row.addWidget(self.add_btn)
 
-        self.cancel_btn = QPushButton("Отмена")
-        self.cancel_btn.setObjectName("secondaryButton")
+        self.cancel_btn = QPushButton(tr("action.cancel"))
         self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.setStyleSheet(button_style("secondary", padding="7px 14px"))
         buttons_row.addWidget(self.cancel_btn)
 
         self.list_widget.currentItemChanged.connect(self._on_current_item_changed)
@@ -145,15 +130,15 @@ class NewExchangeDialog(QDialog):
     def __init__(self, exchange_type, parent=None):
         super().__init__(parent)
         meta = get_exchange_meta(exchange_type)
-        self.setWindowTitle(f"Новое подключение: {meta['title']}")
+        self.setWindowTitle(tr("exchanges.new_connection_title", title=meta["title"]))
         self.setMinimumSize(900, 320)
         self.resize(980, 360)
         self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #0f1318;
-                color: #e8eef2;
-            }
+            f"""
+            QDialog {{
+                background-color: {theme_color('window_bg')};
+                color: {theme_color('text_primary')};
+            }}
         """
         )
 
@@ -161,7 +146,7 @@ class NewExchangeDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
-        self.panel = ExchangePanel("Новое подключение", exchange_type, is_new=True)
+        self.panel = ExchangePanel(tr("exchanges.new_connection_name"), exchange_type, is_new=True)
         layout.addWidget(self.panel)
 
 
@@ -193,14 +178,9 @@ class ExchangesTab(QWidget):
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
-        self.add_btn = QPushButton("Добавить биржу")
+        self.add_btn = QPushButton(tr("exchanges.add_exchange"))
         self.add_btn.setMinimumWidth(140)
-        self.add_btn.setStyleSheet(
-            """
-            QPushButton { background-color: #2a3a5a; color: #7aa2f7; border: 1px solid #7aa2f7; border-radius: 4px; padding: 6px 12px; font-weight: bold; }
-            QPushButton:hover { background-color: #3a4a7a; }
-        """
-        )
+        self.add_btn.setStyleSheet(button_style("primary", padding="6px 12px", bold=True))
         self.add_btn.clicked.connect(self._add_new_panel)
 
         controls.addWidget(self.add_btn)
@@ -209,49 +189,44 @@ class ExchangesTab(QWidget):
         connect_buttons = QHBoxLayout()
         connect_buttons.setSpacing(5)
 
-        self.connect_all_btn = QPushButton("Подключить все")
+        self.connect_all_btn = QPushButton(tr("exchanges.connect_all"))
         self.connect_all_btn.setMinimumWidth(130)
-        self.connect_all_btn.setStyleSheet(
-            """
-            QPushButton { background-color: #2a5a3a; color: #7ec8a6; border: 1px solid #7ec8a6; border-radius: 4px; padding: 6px 12px; }
-            QPushButton:hover { background-color: #3a6a4a; }
-        """
-        )
+        self.connect_all_btn.setStyleSheet(button_style("success", padding="6px 12px"))
         self.connect_all_btn.clicked.connect(self._connect_all)
 
-        self.disconnect_all_btn = QPushButton("Отключить все")
+        self.disconnect_all_btn = QPushButton(tr("exchanges.disconnect_all"))
         self.disconnect_all_btn.setMinimumWidth(130)
-        self.disconnect_all_btn.setStyleSheet(
-            """
-            QPushButton { background-color: #5a2a2a; color: #e06c75; border: 1px solid #e06c75; border-radius: 4px; padding: 6px 12px; }
-            QPushButton:hover { background-color: #6a3a3a; }
-        """
-        )
+        self.disconnect_all_btn.setStyleSheet(button_style("danger", padding="6px 12px"))
         self.disconnect_all_btn.clicked.connect(self._disconnect_all)
 
         connect_buttons.addWidget(self.connect_all_btn)
         connect_buttons.addWidget(self.disconnect_all_btn)
         controls.addLayout(connect_buttons)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(
-            "QScrollArea { border: 1px solid #2a343c; border-radius: 4px; background-color: #0a0c10; }"
-        )
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._apply_scroll_style()
 
         self.container = QWidget()
         self.panels_layout = QVBoxLayout(self.container)
         self.panels_layout.setContentsMargins(2, 2, 2, 2)
         self.panels_layout.setSpacing(2)
         self.panels_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        scroll.setWidget(self.container)
+        self.scroll.setWidget(self.container)
 
         layout.addLayout(controls)
-        layout.addWidget(scroll)
+        layout.addWidget(self.scroll)
         self.setLayout(layout)
 
         self._load_existing()
+
+    def _apply_scroll_style(self):
+        if hasattr(self, "scroll"):
+            self.scroll.setStyleSheet(
+                f"QScrollArea {{ border: 1px solid {theme_color('border')}; border-radius: 4px; "
+                f"background-color: {theme_color('scroll_bg')}; }}"
+            )
 
     def _load_existing(self):
         statuses = self.exchange_manager.get_all_status()
@@ -287,9 +262,50 @@ class ExchangesTab(QWidget):
                 "status_text": exchange.get_status_text(),
             }
         panel.update_status(status)
+        panel.apply_theme()
+        panel.retranslate_ui()
 
         self.panels_layout.addWidget(panel)
         self.exchange_panels[name] = panel
+
+    def apply_theme(self):
+        self.add_btn.setStyleSheet(button_style("primary", padding="6px 12px", bold=True))
+        self.connect_all_btn.setStyleSheet(button_style("success", padding="6px 12px"))
+        self.disconnect_all_btn.setStyleSheet(button_style("danger", padding="6px 12px"))
+        self._apply_scroll_style()
+
+        for panel in self.exchange_panels.values():
+            panel.apply_theme()
+
+        if self.new_panel is not None:
+            self.new_panel.apply_theme()
+
+        if self.new_exchange_dialog is not None:
+            self.new_exchange_dialog.setStyleSheet(
+                f"""
+                QDialog {{
+                    background-color: {theme_color('window_bg')};
+                    color: {theme_color('text_primary')};
+                }}
+            """
+            )
+
+    def retranslate_ui(self):
+        self.add_btn.setText(tr("exchanges.add_exchange"))
+        self.connect_all_btn.setText(tr("exchanges.connect_all"))
+        self.disconnect_all_btn.setText(tr("exchanges.disconnect_all"))
+
+        for panel in self.exchange_panels.values():
+            panel.retranslate_ui()
+
+        if self.new_panel is not None:
+            self.new_panel.retranslate_ui()
+
+        if self.new_exchange_dialog is not None:
+            meta = get_exchange_meta(self.new_panel_exchange_type)
+            self.new_exchange_dialog.setWindowTitle(
+                tr("exchanges.new_connection_title", title=meta["title"])
+            )
 
     def _clear_new_panel_state(self):
         self.new_panel = None
@@ -339,7 +355,7 @@ class ExchangesTab(QWidget):
         if self.new_panel is None:
             return
         self.new_panel.status_label.setText(message)
-        self.new_panel.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+        self.new_panel.status_label.setStyleSheet(f"color: {theme_color('danger')}; font-size: 11px;")
         self.new_panel.status_label.setVisible(True)
         if self.new_exchange_dialog is not None:
             self.new_exchange_dialog.raise_()
@@ -361,8 +377,8 @@ class ExchangesTab(QWidget):
         self.new_panel_exchange_name = final_name
         if self.new_panel is not None:
             self.new_panel.exchange_name = final_name
-            self.new_panel.status_label.setText("Загрузка...")
-            self.new_panel.status_label.setStyleSheet("color: #7aa2f7; font-size: 11px;")
+            self.new_panel.status_label.setText(tr("status.loading"))
+            self.new_panel.status_label.setStyleSheet(f"color: {theme_color('accent')}; font-size: 11px;")
             self.new_panel.status_label.setVisible(True)
 
         self.exchange_added.emit(final_name, type_code, params)
@@ -384,7 +400,7 @@ class ExchangesTab(QWidget):
                 "balance": 0,
                 "positions_count": 0,
                 "pnl": 0,
-                "status_text": "Отключено",
+                "status_text": tr("status.disconnected_manual"),
             }
             if name in self.exchange_panels:
                 self.exchange_panels[name].update_status(status)
@@ -397,8 +413,8 @@ class ExchangesTab(QWidget):
             display_name = f"{meta['base_name']} ({name})"
         reply = QMessageBox.question(
             self,
-            "Подтверждение",
-            f"Удалить биржу {display_name}?",
+            tr("exchanges.confirm_title"),
+            tr("exchanges.confirm_remove", name=display_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

@@ -8,7 +8,10 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+from core.data.settings import SettingsManager
 from core.utils.logger import setup_logger
+from core.i18n import get_language_manager, tr
+from ui.styles import get_theme_manager
 from ui.main_window import MainWindow
 
 def exception_hook(exctype, value, tb):
@@ -21,9 +24,13 @@ def exception_hook(exctype, value, tb):
 if __name__ == "__main__":
     setup_logger()
     sys.excepthook = exception_hook
+
+    settings = SettingsManager()
+    get_language_manager().set_language(settings.load_ui_language())
+    get_theme_manager().set_theme(settings.load_ui_theme())
     
     app = QApplication(sys.argv)
-    app.setApplicationName("Спред Снайпер 3")
+    app.setApplicationName(tr("app.title"))
     app.setStyle('Fusion')
     
     window = MainWindow()
