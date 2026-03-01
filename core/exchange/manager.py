@@ -1,6 +1,7 @@
 from PySide6.QtCore import QObject, Signal
 
-from core.data.storage import ExchangeStorage
+from core.exchange.factory import create_exchange
+from core.exchange.catalog import normalize_exchange_code
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -13,10 +14,14 @@ class ExchangeManager(QObject):
 
     def __init__(self):
         super().__init__()
+        # Import here to avoid circular imports at module import time.
+        from core.data.storage import ExchangeStorage
+
         self.exchanges = {}
         self.storage = ExchangeStorage()
+        self._last_statuses = None
         self._load_saved_exchanges()
-        self._emit_status_updated()
+        self._emit_status_updated(force=True)
 
     def _safe_disconnect(self, signal, slot):
         try:
@@ -41,6 +46,9 @@ class ExchangeManager(QObject):
         self._safe_disconnect(exchange.error, self._on_exchange_error)
 
     def _on_exchange_connected(self, _name):
+        exchange = self.exchanges.get(_name)
+        if exchange:
+            exchange.last_error = ""
         self._emit_status_updated()
 
     def _on_exchange_disconnected(self, _name):
@@ -57,53 +65,56 @@ class ExchangeManager(QObject):
 
     def _on_exchange_error(self, name, message):
         logger.error("%s: %s", name, message)
+        exchange = self.exchanges.get(name)
+        if exchange:
+            exchange.last_error = str(message)
         self._emit_status_updated()
 
     def _load_saved_exchanges(self):
-        from core.exchange import BinanceExchange, BitgetExchange
-
         saved_data = self.storage.load_exchanges()
         for name, data in saved_data.items():
-            exchange_type = data.get("type")
+            exchange_type = normalize_exchange_code(data.get("type"))
             params = {
                 "api_key": data.get("api_key"),
                 "api_secret": data.get("api_secret"),
                 "testnet": data.get("testnet", False),
             }
-            if exchange_type == "bitget" and data.get("api_passphrase"):
+            if data.get("api_passphrase"):
                 params["api_passphrase"] = data.get("api_passphrase")
 
-            if exchange_type == "binance":
-                exchange = BinanceExchange(name, **params)
-            elif exchange_type == "bitget":
-                exchange = BitgetExchange(name, **params)
-            else:
-                continue
+            exchange = create_exchange(name, exchange_type, params)
 
             self.exchanges[name] = exchange
             self._wire_exchange_signals(exchange)
             self.exchange_added.emit(name)
 
             if params.get("api_key") and params.get("api_secret"):
-                exchange.connect()
+                try:
+                    exchange.connect()
+                except Exception as exc:
+                    logger.exception("Failed to connect saved exchange %s: %s", name, exc)
 
     def _save_exchanges(self):
         self.storage.save_exchanges(self.exchanges)
 
-    def _emit_status_updated(self):
-        self.status_updated.emit(self.get_all_status())
+    def _emit_status_updated(self, force=False):
+        statuses = self.get_all_status()
+        if not force and statuses == self._last_statuses:
+            return
+        self._last_statuses = statuses
+        self.status_updated.emit(statuses)
 
     def add_exchange(self, exchange):
         name = exchange.name
         if name in self.exchanges:
-            logger.warning("Биржа %s уже существует", name)
+            logger.warning("Exchange %s already exists", name)
             return False
 
         self.exchanges[name] = exchange
         self._wire_exchange_signals(exchange)
         self.exchange_added.emit(name)
         self._save_exchanges()
-        self._emit_status_updated()
+        self._emit_status_updated(force=True)
         return True
 
     def update_exchange(self, name, exchange):
@@ -118,7 +129,7 @@ class ExchangeManager(QObject):
         self.exchanges[name] = exchange
         self._wire_exchange_signals(exchange)
         self._save_exchanges()
-        self._emit_status_updated()
+        self._emit_status_updated(force=True)
         return True
 
     def remove_exchange(self, name):
@@ -133,7 +144,7 @@ class ExchangeManager(QObject):
         del self.exchanges[name]
         self.exchange_removed.emit(name)
         self._save_exchanges()
-        self._emit_status_updated()
+        self._emit_status_updated(force=True)
         return True
 
     def get_exchange(self, name):
@@ -163,4 +174,4 @@ class ExchangeManager(QObject):
             if exchange.is_connected:
                 exchange.disconnect()
         self._save_exchanges()
-        self._emit_status_updated()
+        self._emit_status_updated(force=True)

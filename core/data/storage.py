@@ -1,9 +1,11 @@
-﻿import json
+import json
 import os
 from copy import deepcopy
 
 from core.data.secrets import decrypt_secret, encrypt_secret, is_encrypted_secret
+from core.exchange.catalog import is_known_exchange_type, normalize_exchange_code
 from core.utils.logger import get_logger
+from core.utils.thread_pool import ThreadManager, Worker
 
 logger = get_logger(__name__)
 
@@ -41,8 +43,8 @@ class ExchangeStorage:
         try:
             exchanges_data = {}
             for name, ex in exchanges.items():
-                ex_type = getattr(ex, "exchange_type", None)
-                if ex_type not in {"binance", "bitget"}:
+                ex_type = normalize_exchange_code(getattr(ex, "exchange_type", None))
+                if not is_known_exchange_type(ex_type):
                     ex_type = "binance" if "Binance" in str(type(ex)) else "bitget"
 
                 data = {
@@ -51,13 +53,13 @@ class ExchangeStorage:
                     "api_secret": ex.api_secret,
                     "testnet": ex.testnet,
                 }
-                if ex_type == "bitget" and hasattr(ex, "api_passphrase"):
-                    data["api_passphrase"] = ex.api_passphrase
+                if hasattr(ex, "api_passphrase"):
+                    data["api_passphrase"] = getattr(ex, "api_passphrase")
 
                 exchanges_data[name] = self._encrypt_sensitive(data)
 
             self._write_raw_data(exchanges_data)
-            logger.info("💾 Сохранено %s бирж", len(exchanges_data))
+            logger.info("Сохранено %s бирж", len(exchanges_data))
             return True
         except Exception as exc:
             logger.error("Ошибка сохранения бирж: %s", exc)
@@ -92,9 +94,31 @@ class ExchangeStorage:
 
             if needs_migration:
                 self._write_raw_data(migration_data)
-                logger.info("🔐 Секреты автоматически мигрированы в DPAPI-формат")
+                logger.info("Секреты автоматически мигрированы в DPAPI-формат")
 
             return decrypted_data
         except Exception as exc:
             logger.error("Ошибка загрузки бирж: %s", exc)
             return {}
+
+    def save_exchanges_async(self, exchanges, callback=None, error_callback=None):
+        def task():
+            return self.save_exchanges(exchanges)
+
+        worker = Worker(task)
+        if callback:
+            worker.signals.result.connect(callback)
+        if error_callback:
+            worker.signals.error.connect(error_callback)
+        ThreadManager().start(worker)
+
+    def load_exchanges_async(self, callback=None, error_callback=None):
+        def task():
+            return self.load_exchanges()
+
+        worker = Worker(task)
+        if callback:
+            worker.signals.result.connect(callback)
+        if error_callback:
+            worker.signals.error.connect(error_callback)
+        ThreadManager().start(worker)

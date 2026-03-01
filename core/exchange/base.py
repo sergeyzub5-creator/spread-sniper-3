@@ -1,5 +1,7 @@
-﻿from abc import ABC, abstractmethod
-from PySide6.QtCore import QObject, Signal
+﻿from PySide6.QtCore import QObject, Signal
+
+from core.utils.thread_pool import ThreadManager, Worker
+
 
 class BaseExchange(QObject):
     connected = Signal(str)
@@ -9,7 +11,7 @@ class BaseExchange(QObject):
     positions_updated = Signal(str, list)
     pnl_updated = Signal(str, float)
     price_updated = Signal(str, str, dict)
-    
+
     def __init__(self, name, api_key=None, api_secret=None, testnet=False):
         super().__init__()
         self.name = name
@@ -21,18 +23,35 @@ class BaseExchange(QObject):
         self.positions = []
         self.pnl = 0.0
         self.symbols = []
-    
-    @abstractmethod
-    def connect(self): pass
-    @abstractmethod
-    def disconnect(self): pass
-    @abstractmethod
-    def subscribe_price(self, symbol): pass
-    @abstractmethod
-    def unsubscribe_price(self, symbol): pass
-    
+        self.last_error = ""
+
+    def connect(self):
+        raise NotImplementedError
+
+    def disconnect(self):
+        raise NotImplementedError
+
+    def subscribe_price(self, symbol):
+        raise NotImplementedError
+
+    def unsubscribe_price(self, symbol):
+        raise NotImplementedError
+
+    def api_request_async(self, api_func, callback=None, error_callback=None, *args, **kwargs):
+        def task():
+            return api_func(*args, **kwargs)
+
+        worker = Worker(task)
+        if callback:
+            worker.signals.result.connect(callback)
+        if error_callback:
+            worker.signals.error.connect(error_callback)
+        ThreadManager().start(worker)
+
     def get_status_text(self):
         if self.is_connected:
-            mode = "📗 Демо" if self.testnet else "📕 Реал"
-            return f"{mode} | Баланс: {self.balance:.2f} USDT | Позиций: {len(self.positions)}"
-        return "⭕ Не подключено"
+            mode = "Demo" if self.testnet else "Real"
+            return f"{mode} | Balance: {self.balance:.2f} USDT | Positions: {len(self.positions)}"
+        if self.last_error:
+            return f"Error: {self.last_error}"
+        return "Not connected"

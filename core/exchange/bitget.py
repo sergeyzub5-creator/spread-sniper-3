@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import hashlib
 import hmac
 import json
@@ -21,8 +21,6 @@ class BitgetExchange(BaseExchange):
         self.api_passphrase = api_passphrase
         self.base_url = "https://api.bitget.com"
         self.timeout = 10
-
-        # Futures v2 API product types are USDT/USDC/COIN futures.
         self.product_type = "USDT-FUTURES"
         self.time_offset = self._get_server_time_offset()
         self.session = requests.Session()
@@ -33,6 +31,14 @@ class BitgetExchange(BaseExchange):
             return float(value)
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _is_latin1(value):
+        try:
+            str(value).encode("latin-1")
+            return True
+        except UnicodeEncodeError:
+            return False
 
     def _get_server_time_offset(self):
         try:
@@ -70,12 +76,15 @@ class BitgetExchange(BaseExchange):
         url = f"{self.base_url}{path}"
         headers = {"Content-Type": "application/json"}
         if self.testnet:
-            # Official demo trading mode requires this header and a Demo API Key.
             headers["paptrading"] = "1"
 
         if signed:
             if not self.api_key or not self.api_secret or not self.api_passphrase:
-                logger.error("%s: отсутствуют API credentials для signed-запроса Bitget", self.name)
+                logger.error("%s: missing API credentials for Bitget signed request", self.name)
+                return None
+
+            if not self._is_latin1(self.api_key) or not self._is_latin1(self.api_passphrase):
+                self.error.emit(self.name, "Bitget API key/passphrase must use latin characters")
                 return None
 
             timestamp = str(int(time.time() * 1000) + self.time_offset)
@@ -98,8 +107,11 @@ class BitgetExchange(BaseExchange):
 
         try:
             response = self.session.request(method, url, **request_kwargs)
-        except requests.RequestException as exc:
-            logger.error("Bitget %s %s ошибка сети: %s", method, path, exc)
+        except (requests.RequestException, UnicodeError, ValueError) as exc:
+            logger.error("Bitget %s %s request failed: %s", method, path, exc)
+            return None
+        except Exception as exc:
+            logger.error("Bitget %s %s unexpected error: %s", method, path, exc)
             return None
 
         try:
@@ -110,7 +122,7 @@ class BitgetExchange(BaseExchange):
         if response.ok and payload.get("code") == "00000":
             return payload
 
-        logger.error("Bitget %s %s ошибка %s: %s", method, path, response.status_code, payload)
+        logger.error("Bitget %s %s error %s: %s", method, path, response.status_code, payload)
         return None
 
     def _fetch_balance(self):
@@ -121,7 +133,7 @@ class BitgetExchange(BaseExchange):
             signed=True,
         )
         if not payload:
-            return 0.0
+            return None
 
         data = payload.get("data") or []
         if not data:
@@ -143,7 +155,7 @@ class BitgetExchange(BaseExchange):
             signed=True,
         )
         if not payload:
-            return []
+            return None
 
         positions = []
         for pos in payload.get("data") or []:
@@ -167,17 +179,16 @@ class BitgetExchange(BaseExchange):
         return positions
 
     def connect(self):
-        logger.info("%s попытка подключения...", self.name)
+        logger.info("%s connect attempt...", self.name)
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
-            msg = "Для Bitget обязательны API Key, Secret и Passphrase"
+            msg = "Bitget requires API key, API secret and passphrase"
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         self.time_offset = self._get_server_time_offset()
 
-        # Public endpoint from official docs to verify market connectivity.
         contracts = self._request(
             "GET",
             "/api/v2/mix/market/contracts",
@@ -185,11 +196,17 @@ class BitgetExchange(BaseExchange):
             signed=False,
         )
         if not contracts:
-            self.error.emit(self.name, "Bitget недоступна или неверный productType")
+            self.error.emit(self.name, "Bitget is unavailable or product type is invalid")
             return False
 
-        self.balance = self._fetch_balance()
-        self.positions = self._fetch_positions()
+        balance = self._fetch_balance()
+        positions = self._fetch_positions()
+        if balance is None or positions is None:
+            self.error.emit(self.name, "Bitget authentication failed")
+            return False
+
+        self.balance = balance
+        self.positions = positions
         self.pnl = sum(pos.get("pnl", 0.0) for pos in self.positions)
         self.is_connected = True
 
@@ -197,16 +214,16 @@ class BitgetExchange(BaseExchange):
         self.balance_updated.emit(self.name, self.balance)
         self.positions_updated.emit(self.name, self.positions)
         self.pnl_updated.emit(self.name, self.pnl)
-        logger.info("%s подключена", self.name)
+        logger.info("%s connected", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info("%s отключена", self.name)
+        logger.info("%s disconnected", self.name)
 
     def subscribe_price(self, symbol):
-        logger.info("%s подписка на %s", self.name, symbol)
+        logger.info("%s subscribe %s", self.name, symbol)
 
     def unsubscribe_price(self, symbol):
-        logger.info("%s отписка от %s", self.name, symbol)
+        logger.info("%s unsubscribe %s", self.name, symbol)
