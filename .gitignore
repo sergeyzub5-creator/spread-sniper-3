@@ -1,0 +1,26 @@
+﻿# Virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+debug_*
+project_snapshot.txt
+
+# Data files with API keys
+data/exchanges.json
+.env
+*.key
+
+# Local settings
+*.local
