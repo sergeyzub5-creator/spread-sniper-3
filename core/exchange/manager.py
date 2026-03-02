@@ -25,6 +25,7 @@ class ExchangeManager(QObject):
         self._connect_workers = {}
         self._refresh_workers = {}
         self._refresh_unsupported = set()
+        self._disconnect_on_connect = set()
 
         self._load_saved_exchanges()
         self._emit_status_updated(force=True)
@@ -58,9 +59,18 @@ class ExchangeManager(QObject):
 
     def _on_exchange_connected(self, name):
         exchange = self.exchanges.get(name)
+        if exchange and name in self._disconnect_on_connect:
+            # Late connect completed after manual disconnect: force back to disconnected.
+            exchange.auto_connect = False
+            self._loading_exchanges.discard(name)
+            self._refresh_unsupported.discard(name)
+            if exchange.is_connected:
+                exchange.disconnect()
+            self._emit_status_updated(force=True)
+            return
+
         if exchange:
             exchange.last_error = ""
-            exchange.auto_connect = True
         self._loading_exchanges.discard(name)
         self._refresh_unsupported.discard(name)
         self._start_refresh_worker(name)
@@ -213,6 +223,7 @@ class ExchangeManager(QObject):
             return False
 
         self._loading_exchanges.discard(name)
+        self._disconnect_on_connect.discard(name)
 
         old_exchange = self.exchanges[name]
         if old_exchange.is_connected:
@@ -231,6 +242,7 @@ class ExchangeManager(QObject):
             return False
 
         self._loading_exchanges.discard(name)
+        self._disconnect_on_connect.discard(name)
         self._connect_workers.pop(name, None)
         self._refresh_workers.pop(name, None)
         self._refresh_unsupported.discard(name)
@@ -250,6 +262,7 @@ class ExchangeManager(QObject):
         exchange = self.exchanges.get(name)
         if exchange is None:
             return False
+        self._disconnect_on_connect.discard(name)
         exchange.auto_connect = True
         self._save_exchanges()
         return self._start_connect_worker(name)
@@ -258,6 +271,7 @@ class ExchangeManager(QObject):
         for name in self.exchanges.keys():
             exchange = self.exchanges.get(name)
             if exchange is not None:
+                self._disconnect_on_connect.discard(name)
                 exchange.auto_connect = True
             self._start_connect_worker(name)
         self._save_exchanges()
@@ -269,6 +283,7 @@ class ExchangeManager(QObject):
 
         if manual:
             exchange.auto_connect = False
+            self._disconnect_on_connect.add(name)
 
         if exchange.is_connected:
             exchange.disconnect()
@@ -282,6 +297,8 @@ class ExchangeManager(QObject):
     def _start_refresh_worker(self, name):
         exchange = self.exchanges.get(name)
         if exchange is None:
+            return False
+        if name in self._disconnect_on_connect:
             return False
         if not exchange.is_connected:
             return False
@@ -303,11 +320,14 @@ class ExchangeManager(QObject):
 
     def _refresh_connected_async(self):
         for name, exchange in self.exchanges.items():
-            if exchange.is_connected:
+            if exchange.is_connected and name not in self._disconnect_on_connect:
                 self._start_refresh_worker(name)
 
     def get_exchange(self, name):
         return self.exchanges.get(name)
+
+    def is_exchange_loading(self, name):
+        return name in self._loading_exchanges or name in self._connect_workers
 
     def get_all_exchanges(self):
         return self.exchanges
@@ -335,9 +355,10 @@ class ExchangeManager(QObject):
         return statuses
 
     def disconnect_all(self, manual=False):
-        for exchange in self.exchanges.values():
+        for name, exchange in self.exchanges.items():
             if manual:
                 exchange.auto_connect = False
+                self._disconnect_on_connect.add(name)
             if exchange.is_connected:
                 exchange.disconnect()
 

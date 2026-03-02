@@ -367,12 +367,16 @@ class ExchangesTab(QWidget):
     def set_new_panel_error(self, message):
         if self.new_panel is None:
             return
+        self.new_panel.connect_btn.setEnabled(True)
         self.new_panel.show_status_message(message, "danger", "danger", emphasize=True)
         if self.new_exchange_dialog is not None:
             self.new_exchange_dialog.raise_()
             self.new_exchange_dialog.activateWindow()
 
     def _on_new_panel_connect(self, _name, params):
+        if self.new_panel is not None:
+            self.new_panel.connect_btn.setEnabled(False)
+
         selected_type = self.new_panel_exchange_type
         if not selected_type and self.new_panel is not None:
             selected_type = self.new_panel.exchange_type
@@ -396,6 +400,11 @@ class ExchangesTab(QWidget):
         panel = self.sender()
         if not panel:
             return
+        if self.exchange_manager.is_exchange_loading(name):
+            panel.show_status_message(tr("status.loading"), "warning", "warning")
+            panel.connect_btn.setEnabled(False)
+            return
+        panel.connect_btn.setEnabled(False)
         self.exchange_added.emit(name, panel.exchange_type, params)
 
     def _on_panel_disconnect(self, name):

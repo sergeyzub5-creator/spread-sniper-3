@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QLabel,
     QHBoxLayout,
     QMainWindow,
@@ -19,6 +20,7 @@ from ui.styles import get_theme_manager, theme_color
 from ui.styles.dark_theme import get_dark_theme_stylesheet
 from ui.tabs.exchanges_tab import ExchangesTab
 from ui.tabs.spread_sniping_tab import SpreadSnipingTab
+from ui.utils import ButtonSpamGuard
 from ui.widgets.brand_header import NeonLogoWidget
 from ui.widgets.status_bar import NetworkStatusBar
 
@@ -31,6 +33,10 @@ class MainWindow(QMainWindow):
         self.language_manager = get_language_manager()
         self.theme_manager = get_theme_manager()
         self.settings_manager = SettingsManager()
+        self._button_spam_guard = ButtonSpamGuard(cooldown_ms=220, parent=self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._button_spam_guard)
 
         self._load_ui_preferences()
 
@@ -249,6 +255,10 @@ class MainWindow(QMainWindow):
 
     def _on_exchange_added(self, name, exchange_type, params):
         type_code = normalize_exchange_code(exchange_type)
+        is_existing = self.exchange_manager.get_exchange(name) is not None
+        if is_existing and self.exchange_manager.is_exchange_loading(name):
+            return
+
         try:
             exchange = create_exchange(name, type_code, params)
         except Exception as exc:

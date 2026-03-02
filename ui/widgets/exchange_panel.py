@@ -462,6 +462,7 @@ class ExchangePanel(QFrame):
                     return
                 params["api_passphrase"] = passphrase
 
+        self.connect_btn.setEnabled(False)
         self.connect_clicked.emit(self.exchange_name, params)
 
     def update_status(self, status, force=False):
@@ -521,6 +522,15 @@ class ExchangePanel(QFrame):
 
         if prev_connected != self.is_connected:
             self._update_ui_state()
+
+        is_loading = snapshot["loading"]
+        self.connect_btn.setEnabled(not is_loading)
+        self.edit_btn.setEnabled(not is_loading)
+        self.remove_btn.setEnabled(not is_loading)
+        if is_loading:
+            self.api_group.setEnabled(False)
+        else:
+            self.api_group.setEnabled(True)
 
         self._last_status_snapshot = snapshot
 
