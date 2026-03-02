@@ -48,8 +48,8 @@ class ExchangePanel(QFrame):
                 border: 1px solid {theme_color('border')};
                 border-radius: 4px;
                 background-color: {theme_color('surface')};
-                margin: 2px;
-                padding: 8px;
+                margin: 1px;
+                padding: 5px;
             }}
         """
         )
@@ -60,12 +60,13 @@ class ExchangePanel(QFrame):
         self.balance_label.setStyleSheet(self._metric_style("success", bold=True))
         self.positions_label.setStyleSheet(self._metric_style("warning"))
         self.testnet_check.setStyleSheet(f"color: {theme_color('warning')};")
+        self._apply_status_container_style()
 
-        self.connect_btn.setStyleSheet(button_style("primary"))
-        self.disconnect_btn.setStyleSheet(button_style("danger"))
-        self.edit_btn.setStyleSheet(button_style("warning"))
-        self.remove_btn.setStyleSheet(button_style("secondary"))
-        self.cancel_btn.setStyleSheet(button_style("warning"))
+        self.connect_btn.setStyleSheet(button_style("primary", padding="4px 9px"))
+        self.disconnect_btn.setStyleSheet(button_style("danger", padding="4px 9px"))
+        self.edit_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
+        self.remove_btn.setStyleSheet(button_style("secondary", padding="4px 9px"))
+        self.cancel_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
 
         if self._last_status_snapshot is not None:
             self.update_status(dict(self._last_status_snapshot), force=True)
@@ -74,44 +75,88 @@ class ExchangePanel(QFrame):
 
     @staticmethod
     def _status_style(color_key):
-        return f"color: {theme_color(color_key)}; font-size: 11px;"
+        return f"color: {theme_color(color_key)}; font-size: 10px;"
 
     @staticmethod
     def _metric_style(color_key, bold=False):
         weight = "font-weight: bold;" if bold else ""
-        return f"color: {theme_color(color_key)}; font-size: 12px; {weight}"
+        return f"color: {theme_color(color_key)}; font-size: 11px; {weight}"
+
+    @staticmethod
+    def _indicator_style(color_key):
+        return (
+            f"background-color: {theme_color(color_key)}; "
+            f"border: 1px solid {theme_color('border')}; border-radius: 4px;"
+        )
+
+    def _apply_status_container_style(self):
+        self.status_widget.setStyleSheet(
+            f"""
+            QWidget#statusWidget {{
+                background-color: {theme_color('surface_alt')};
+                border: 1px solid {theme_color('border')};
+                border-radius: 4px;
+            }}
+        """
+        )
+
+    def _set_status_view(self, text, text_color_key, indicator_color_key):
+        self.status_widget.setVisible(True)
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(self._status_style(text_color_key))
+        self.status_label.setVisible(True)
+        self.status_indicator.setStyleSheet(self._indicator_style(indicator_color_key))
+        self.status_indicator.setVisible(True)
+
+    def show_status_message(self, text, text_color_key="text_muted", indicator_color_key=None):
+        indicator_key = indicator_color_key or text_color_key
+        self._set_status_view(text, text_color_key, indicator_key)
 
     def _init_ui(self):
         layout = QVBoxLayout()
-        layout.setSpacing(8)
+        layout.setSpacing(4)
 
         header = QHBoxLayout()
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=42))
-        self.icon_label.setFixedSize(42, 42)
+        self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=30))
+        self.icon_label.setFixedSize(30, 30)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.name_label = QLabel(self.exchange_name)
         font = QFont()
-        font.setPointSize(12)
+        font.setPointSize(10)
         font.setBold(True)
         self.name_label.setFont(font)
         self.name_label.setMinimumWidth(80)
 
         self.status_label = QLabel(tr("status.disconnected"))
         self.status_label.setStyleSheet(self._status_style("text_muted"))
-        self.status_label.setMinimumWidth(140)
+
+        self.status_indicator = QLabel()
+        self.status_indicator.setFixedSize(8, 8)
+        self.status_indicator.setStyleSheet(self._indicator_style("danger"))
+
+        self.status_widget = QWidget()
+        self.status_widget.setObjectName("statusWidget")
+        self.status_widget.setMinimumWidth(108)
+        status_layout = QHBoxLayout(self.status_widget)
+        status_layout.setContentsMargins(8, 3, 8, 3)
+        status_layout.setSpacing(6)
+        status_layout.addWidget(self.status_indicator)
+        status_layout.addWidget(self.status_label)
+        status_layout.addStretch()
+        self._apply_status_container_style()
 
         header.addWidget(self.icon_label)
         header.addWidget(self.name_label)
-        header.addWidget(self.status_label)
+        header.addWidget(self.status_widget)
         header.addStretch()
         layout.addLayout(header)
 
         self.stats_widget = QWidget()
         stats_layout = QHBoxLayout(self.stats_widget)
         stats_layout.setContentsMargins(0, 0, 0, 0)
-        stats_layout.setSpacing(8)
+        stats_layout.setSpacing(5)
         self.balance_label = QLabel(tr("label.balance_empty"))
         self.balance_label.setStyleSheet(self._metric_style("success", bold=True))
         self.positions_label = QLabel(tr("label.positions_empty"))
@@ -127,10 +172,12 @@ class ExchangePanel(QFrame):
         if self.is_new:
             self.stats_widget.setVisible(False)
             self.name_label.setVisible(False)
-            self.icon_label.setFixedSize(72, 72)
-            self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=72))
+            self.icon_label.setFixedSize(52, 52)
+            self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=52))
             self.status_label.setText("")
             self.status_label.setVisible(False)
+            self.status_indicator.setVisible(False)
+            self.status_widget.setVisible(False)
 
         self.api_group = QGroupBox(tr("panel.api_group_title", title=self.exchange_meta["title"]))
         api_layout = QHBoxLayout()
@@ -165,31 +212,31 @@ class ExchangePanel(QFrame):
         layout.addWidget(self.api_group)
 
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(5)
+        button_layout.setSpacing(4)
 
         self.connect_btn = QPushButton(tr("action.connect"))
         self.connect_btn.setMinimumWidth(100)
-        self.connect_btn.setStyleSheet(button_style("primary"))
+        self.connect_btn.setStyleSheet(button_style("primary", padding="4px 9px"))
         self.connect_btn.clicked.connect(self._on_connect)
 
         self.disconnect_btn = QPushButton(tr("action.disconnect"))
         self.disconnect_btn.setMinimumWidth(100)
-        self.disconnect_btn.setStyleSheet(button_style("danger"))
+        self.disconnect_btn.setStyleSheet(button_style("danger", padding="4px 9px"))
         self.disconnect_btn.clicked.connect(lambda: self.disconnect_clicked.emit(self.exchange_name))
 
         self.edit_btn = QPushButton(tr("action.edit"))
         self.edit_btn.setMinimumWidth(100)
-        self.edit_btn.setStyleSheet(button_style("warning"))
+        self.edit_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
         self.edit_btn.clicked.connect(lambda: self.set_edit_mode(True))
 
         self.remove_btn = QPushButton(tr("action.remove"))
         self.remove_btn.setMinimumWidth(100)
-        self.remove_btn.setStyleSheet(button_style("secondary"))
+        self.remove_btn.setStyleSheet(button_style("secondary", padding="4px 9px"))
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.exchange_name))
 
         self.cancel_btn = QPushButton(tr("action.cancel"))
         self.cancel_btn.setMinimumWidth(100)
-        self.cancel_btn.setStyleSheet(button_style("warning"))
+        self.cancel_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
         self.cancel_btn.clicked.connect(self._on_cancel)
 
         button_layout.addWidget(self.connect_btn)
@@ -236,9 +283,7 @@ class ExchangePanel(QFrame):
 
     def _update_ui_state(self):
         if self.is_connected:
-            self.status_label.setText(tr("status.connected"))
-            self.status_label.setStyleSheet(self._status_style("success"))
-            self.status_label.setVisible(True)
+            self._set_status_view(tr("status.connected"), "success", "success")
             self.connect_btn.setVisible(False)
             self.disconnect_btn.setVisible(True)
             self.edit_btn.setVisible(False)
@@ -247,10 +292,10 @@ class ExchangePanel(QFrame):
             if self.is_new:
                 self.status_label.setText("")
                 self.status_label.setVisible(False)
+                self.status_indicator.setVisible(False)
+                self.status_widget.setVisible(False)
             else:
-                self.status_label.setText(tr("status.disconnected"))
-                self.status_label.setStyleSheet(self._status_style("text_muted"))
-                self.status_label.setVisible(True)
+                self._set_status_view(tr("status.disconnected"), "text_muted", "danger")
             self.balance_label.setText(tr("label.balance_empty"))
             self.positions_label.setText(tr("label.positions_empty"))
             self._set_pnl_display(0.0, 0)
@@ -310,9 +355,7 @@ class ExchangePanel(QFrame):
             return False
 
     def _show_input_error(self, message):
-        self.status_label.setText(message)
-        self.status_label.setStyleSheet(self._status_style("danger"))
-        self.status_label.setVisible(True)
+        self.show_status_message(message, "danger", "danger")
 
     def _on_connect(self):
         if not self.edit_mode:
@@ -376,8 +419,7 @@ class ExchangePanel(QFrame):
 
         if self.is_connected:
             mode = tr("mode.demo") if snapshot["testnet"] else tr("mode.real")
-            self.status_label.setText(tr("status.connected_mode", mode=mode))
-            self.status_label.setStyleSheet(self._status_style("success"))
+            self._set_status_view(tr("status.connected_mode", mode=mode), "success", "success")
             self.balance_label.setText(tr("label.balance", value=f"{snapshot['balance']:,.2f}"))
             self.positions_label.setText(tr("label.positions", value=snapshot["positions_count"]))
             self._set_pnl_display(snapshot["pnl"], snapshot["positions_count"])
@@ -387,19 +429,21 @@ class ExchangePanel(QFrame):
 
             if snapshot["loading"]:
                 status_text = tr("status.loading")
-                color_key = "accent"
+                text_color_key = "warning"
+                indicator_key = "warning"
             elif (
                 "ошибка" in lower_text
                 or "error" in lower_text
                 or "не реализовано" in lower_text
                 or "not implemented" in lower_text
             ):
-                color_key = "danger"
+                text_color_key = "danger"
+                indicator_key = "danger"
             else:
-                color_key = "text_muted"
+                text_color_key = "text_muted"
+                indicator_key = "danger"
 
-            self.status_label.setText(status_text)
-            self.status_label.setStyleSheet(self._status_style(color_key))
+            self._set_status_view(status_text, text_color_key, indicator_key)
             self.balance_label.setText(tr("label.balance_empty"))
             self.positions_label.setText(tr("label.positions_empty"))
             self._set_pnl_display(0.0, 0)

@@ -13,6 +13,7 @@ from core.utils.logger import setup_logger
 from core.i18n import get_language_manager, tr
 from ui.styles import get_theme_manager
 from ui.main_window import MainWindow
+from ui.widgets.brand_header import build_neon_app_icon
 
 def exception_hook(exctype, value, tb):
     import traceback
@@ -32,8 +33,11 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName(tr("app.title"))
     app.setStyle('Fusion')
+    app_icon = build_neon_app_icon()
+    app.setWindowIcon(app_icon)
     
     window = MainWindow()
+    window.setWindowIcon(app_icon)
     window.show()
     
     sys.exit(app.exec())

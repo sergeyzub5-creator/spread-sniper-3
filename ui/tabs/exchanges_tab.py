@@ -354,9 +354,7 @@ class ExchangesTab(QWidget):
     def set_new_panel_error(self, message):
         if self.new_panel is None:
             return
-        self.new_panel.status_label.setText(message)
-        self.new_panel.status_label.setStyleSheet(f"color: {theme_color('danger')}; font-size: 11px;")
-        self.new_panel.status_label.setVisible(True)
+        self.new_panel.show_status_message(message, "danger", "danger")
         if self.new_exchange_dialog is not None:
             self.new_exchange_dialog.raise_()
             self.new_exchange_dialog.activateWindow()
@@ -377,9 +375,7 @@ class ExchangesTab(QWidget):
         self.new_panel_exchange_name = final_name
         if self.new_panel is not None:
             self.new_panel.exchange_name = final_name
-            self.new_panel.status_label.setText(tr("status.loading"))
-            self.new_panel.status_label.setStyleSheet(f"color: {theme_color('accent')}; font-size: 11px;")
-            self.new_panel.status_label.setVisible(True)
+            self.new_panel.show_status_message(tr("status.loading"), "warning", "warning")
 
         self.exchange_added.emit(final_name, type_code, params)
 

@@ -1,9 +1,11 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
-    QHBoxLayout,
     QLabel,
+    QHBoxLayout,
     QMainWindow,
+    QMenu,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -13,10 +15,11 @@ from core.exchange import ExchangeManager, create_exchange
 from core.exchange.catalog import get_exchange_meta, normalize_exchange_code
 from core.i18n import get_language_manager, tr
 from core.utils.logger import get_logger
-from ui.styles import get_theme_manager
+from ui.styles import get_theme_manager, theme_color
 from ui.styles.dark_theme import get_dark_theme_stylesheet
 from ui.tabs.exchanges_tab import ExchangesTab
 from ui.tabs.spread_sniping_tab import SpreadSnipingTab
+from ui.widgets.brand_header import NeonLogoWidget
 from ui.widgets.status_bar import NetworkStatusBar
 
 logger = get_logger(__name__)
@@ -41,9 +44,9 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(5)
+        layout.setSpacing(6)
 
-        self._create_header_controls(layout)
+        self._create_top_controls(layout)
 
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
@@ -66,33 +69,61 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self._retranslate_ui()
 
-    def _create_header_controls(self, parent_layout):
-        self.header_layout = QHBoxLayout()
-        self.header_layout.setContentsMargins(0, 0, 0, 0)
-        self.header_layout.setSpacing(8)
-        self.header_layout.addStretch()
+    def _create_top_controls(self, parent_layout):
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(12)
 
-        self.language_title_label = QLabel()
-        self.header_layout.addWidget(self.language_title_label)
+        self.left_slot = QWidget()
+        top_row.addWidget(self.left_slot, 1)
 
-        self.language_combo = QComboBox()
-        self.language_combo.setMinimumWidth(130)
-        self.header_layout.addWidget(self.language_combo)
+        self.brand_header = NeonLogoWidget()
+        self.brand_header.setLogoSize(58)
+        self.brand_header.setLineY(43)
+        self.brand_header.setShowLines(True)
+        top_row.addWidget(self.brand_header, 0, Qt.AlignmentFlag.AlignCenter)
 
-        self.theme_title_label = QLabel()
-        self.header_layout.addWidget(self.theme_title_label)
+        self.right_slot = QWidget()
+        self.top_controls = QHBoxLayout(self.right_slot)
+        self.top_controls.setContentsMargins(0, 0, 0, 0)
+        self.top_controls.setSpacing(8)
 
-        self.theme_combo = QComboBox()
-        self.theme_combo.setMinimumWidth(130)
-        self.header_layout.addWidget(self.theme_combo)
+        self.language_code_label = QLabel()
+        self.language_code_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.language_code_label.setMinimumWidth(28)
+        self.top_controls.addWidget(self.language_code_label)
 
-        self._fill_language_combo()
-        self._fill_theme_combo()
+        self.language_menu = QMenu(self)
+        self.language_btn = QToolButton()
+        self.language_btn.setText("\U0001F310")
+        self.language_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.language_btn.setMenu(self.language_menu)
+        self.language_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.language_btn.setFixedSize(38, 32)
+        self.top_controls.addWidget(self.language_btn)
 
-        self.language_combo.currentIndexChanged.connect(self._on_language_combo_changed)
-        self.theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
+        self.settings_menu = QMenu(self)
+        self.settings_btn = QToolButton()
+        self.settings_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.settings_btn.setMenu(self.settings_menu)
+        self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_btn.setMinimumWidth(130)
+        self.settings_btn.setFixedHeight(32)
+        self.top_controls.addWidget(self.settings_btn)
 
-        parent_layout.addLayout(self.header_layout)
+        top_row.addWidget(self.right_slot, 1)
+        parent_layout.addLayout(top_row)
+
+        self._build_language_menu()
+        self._build_settings_menu()
+        self._sync_header_side_widths()
+
+    def _sync_header_side_widths(self):
+        if not hasattr(self, "left_slot") or not hasattr(self, "right_slot"):
+            return
+        self.right_slot.adjustSize()
+        width = self.right_slot.sizeHint().width()
+        self.left_slot.setMinimumWidth(width)
 
     def _load_ui_preferences(self):
         saved_language = self.settings_manager.load_ui_language()
@@ -100,57 +131,31 @@ class MainWindow(QMainWindow):
         self.language_manager.set_language(saved_language)
         self.theme_manager.set_theme(saved_theme)
 
-    def _fill_language_combo(self):
+    def _build_language_menu(self):
+        self.language_menu.clear()
         current = self.language_manager.language
-        ui_ru = current == "ru"
+        for code in ("ru", "en"):
+            action = self.language_menu.addAction(tr(f"language.{code}"))
+            action.setCheckable(True)
+            action.setChecked(code == current)
+            action.triggered.connect(lambda _checked=False, lang=code: self._set_language(lang))
 
-        options = [
-            ("ru", "Русский" if ui_ru else "Russian"),
-            ("en", "Английский" if ui_ru else "English"),
-        ]
+    def _build_settings_menu(self):
+        self.settings_menu.clear()
+        self.themes_submenu = self.settings_menu.addMenu(tr("settings.themes_item"))
+        current_theme = self.theme_manager.theme_name
+        for code in self.theme_manager.available_themes():
+            action = self.themes_submenu.addAction(tr(f"theme.{code}"))
+            action.setCheckable(True)
+            action.setChecked(code == current_theme)
+            action.triggered.connect(lambda _checked=False, theme_code=code: self._set_theme(theme_code))
 
-        self.language_combo.blockSignals(True)
-        self.language_combo.clear()
-        for code, label in options:
-            self.language_combo.addItem(label, code)
-        self._set_combo_value(self.language_combo, current)
-        self.language_combo.blockSignals(False)
-
-    def _fill_theme_combo(self):
-        current = self.theme_manager.theme_name
-        ui_ru = self.language_manager.language == "ru"
-
-        options = [
-            ("dark", "Тёмная" if ui_ru else "Dark"),
-            ("light", "Светлая" if ui_ru else "Light"),
-        ]
-
-        self.theme_combo.blockSignals(True)
-        self.theme_combo.clear()
-        for code, label in options:
-            self.theme_combo.addItem(label, code)
-        self._set_combo_value(self.theme_combo, current)
-        self.theme_combo.blockSignals(False)
-
-    @staticmethod
-    def _set_combo_value(combo, value):
-        for i in range(combo.count()):
-            if combo.itemData(i) == value:
-                combo.setCurrentIndex(i)
-                return
-
-    def _on_language_combo_changed(self, index):
-        language_code = self.language_combo.itemData(index)
-        if language_code is None:
-            return
-        self.language_manager.set_language(str(language_code))
+    def _set_language(self, language_code):
+        self.language_manager.set_language(language_code)
         self.settings_manager.save_ui_language(self.language_manager.language)
 
-    def _on_theme_combo_changed(self, index):
-        theme_name = self.theme_combo.itemData(index)
-        if theme_name is None:
-            return
-        self.theme_manager.set_theme(str(theme_name))
+    def _set_theme(self, theme_code):
+        self.theme_manager.set_theme(theme_code)
         self.settings_manager.save_ui_theme(self.theme_manager.theme_name)
 
     def _on_language_changed(self, _language):
@@ -158,9 +163,62 @@ class MainWindow(QMainWindow):
 
     def _on_theme_changed(self, _theme_name):
         self._apply_theme()
+        self._build_settings_menu()
 
     def _apply_theme(self):
         self.setStyleSheet(get_dark_theme_stylesheet())
+
+        self.language_btn.setStyleSheet(
+            f"""
+            QToolButton {{
+                background-color: {theme_color('surface')};
+                color: {theme_color('text_primary')};
+                border: 1px solid {theme_color('border')};
+                border-radius: 10px;
+                font-size: 17px;
+                font-weight: 600;
+                padding: 2px 3px;
+            }}
+            QToolButton:hover {{
+                background-color: {theme_color('surface_alt')};
+            }}
+        """
+        )
+
+        self.language_code_label.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {theme_color('text_primary')};
+                font-size: 12px;
+                font-weight: 700;
+                padding: 0 1px;
+            }}
+        """
+        )
+
+        self.settings_btn.setStyleSheet(
+            f"""
+            QToolButton {{
+                background-color: {theme_color('surface')};
+                color: {theme_color('text_primary')};
+                border: 1px solid {theme_color('border')};
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 600;
+                padding: 3px 14px;
+            }}
+            QToolButton:hover {{
+                background-color: {theme_color('surface_alt')};
+            }}
+        """
+        )
+
+        self.language_btn.setFixedSize(46, 34)
+        self.settings_btn.setFixedHeight(34)
+
+        if hasattr(self, "brand_header"):
+            self.brand_header.apply_theme()
+
         if hasattr(self, "exchanges_tab"):
             self.exchanges_tab.apply_theme()
         if hasattr(self, "spread_sniping_tab"):
@@ -174,15 +232,13 @@ class MainWindow(QMainWindow):
             self.tabs.setTabText(0, tr("tab.exchanges"))
             self.tabs.setTabText(1, tr("tab.spread_sniping"))
 
-        if hasattr(self, "language_title_label"):
-            if self.language_manager.language == "ru":
-                self.language_title_label.setText("Язык:")
-                self.theme_title_label.setText("Тема:")
-            else:
-                self.language_title_label.setText("Language:")
-                self.theme_title_label.setText("Theme:")
-            self._fill_language_combo()
-            self._fill_theme_combo()
+        if hasattr(self, "language_btn"):
+            self.language_btn.setToolTip(tr("settings.language_tooltip"))
+            self.settings_btn.setText(tr("settings.button"))
+            self.language_code_label.setText(self.language_manager.language.upper())
+            self._build_language_menu()
+            self._build_settings_menu()
+            self._sync_header_side_widths()
 
         if hasattr(self, "exchanges_tab"):
             self.exchanges_tab.retranslate_ui()
@@ -258,3 +314,6 @@ class MainWindow(QMainWindow):
                 meta = get_exchange_meta(type_code)
                 self.status_bar.show_error(f"{meta['short']} {name}: {status_text}")
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_header_side_widths()

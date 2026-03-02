@@ -33,35 +33,80 @@ THEMES = {
         "net_offline": "#ef4444",
         "net_offline_border": "#b91c1c",
     },
-    # Reserved for future switching without refactoring widgets.
-    "light": {
-        "window_bg": "#f4f6f8",
-        "surface": "#ffffff",
-        "surface_alt": "#eef2f6",
-        "border": "#c7d0da",
-        "text_primary": "#111827",
-        "text_muted": "#4b5563",
-        "accent": "#2563eb",
-        "accent_bg": "#dbeafe",
-        "accent_bg_hover": "#bfdbfe",
-        "success": "#15803d",
-        "success_bg": "#dcfce7",
-        "success_bg_hover": "#bbf7d0",
-        "danger": "#b91c1c",
-        "danger_bg": "#fee2e2",
-        "danger_bg_hover": "#fecaca",
-        "warning": "#a16207",
-        "warning_bg": "#fef3c7",
-        "warning_bg_hover": "#fde68a",
-        "scroll_bg": "#f4f6f8",
-        "selection_bg_soft": "rgba(37, 99, 235, 0.18)",
-        "tab_selected_bg": "rgba(219, 234, 254, 0.70)",
-        "net_idle": "#94a3b8",
-        "net_idle_border": "#64748b",
+    "graphite_pro": {
+        "window_bg": "#e3e4e8",
+        "surface": "#f0f1f4",
+        "surface_alt": "#e8eaef",
+        "border": "#c5c9d3",
+        "text_primary": "#30384a",
+        "text_muted": "#606a7d",
+        "accent": "#4e79c7",
+        "accent_bg": "#d8e4fb",
+        "accent_bg_hover": "#c7d8f6",
+        "success": "#4cae9d",
+        "success_bg": "#d8efec",
+        "success_bg_hover": "#c5e7e1",
+        "danger": "#cb6466",
+        "danger_bg": "#f8dede",
+        "danger_bg_hover": "#f2cfd0",
+        "warning": "#9c7a34",
+        "warning_bg": "#f3e8cf",
+        "warning_bg_hover": "#ebddbe",
+        "scroll_bg": "#dde0e6",
+        "selection_bg_soft": "rgba(78, 121, 199, 44)",
+        "tab_selected_bg": "rgba(216, 228, 251, 180)",
+        "net_idle": "#9098a8",
+        "net_idle_border": "#737d8f",
         "net_online": "#22c55e",
         "net_online_border": "#15803d",
         "net_offline": "#ef4444",
         "net_offline_border": "#b91c1c",
+    },
+    "steel": {
+        "window_bg": "#2b2c30",
+        "surface": "#35373c",
+        "surface_alt": "#3f4248",
+        "border": "#5c6068",
+        "text_primary": "#f0f2f5",
+        "text_muted": "#b9bec7",
+        "accent": "#9cb3d8",
+        "accent_bg": "#505d72",
+        "accent_bg_hover": "#5d6b81",
+        "success": "#79bfa6",
+        "success_bg": "#44635a",
+        "success_bg_hover": "#4f7468",
+        "danger": "#dc8a90",
+        "danger_bg": "#774a51",
+        "danger_bg_hover": "#88575f",
+        "warning": "#c8ae7a",
+        "warning_bg": "#6b5f44",
+        "warning_bg_hover": "#7a6d4f",
+        "scroll_bg": "#26282c",
+        "selection_bg_soft": "rgba(156, 179, 216, 50)",
+        "tab_selected_bg": "rgba(80, 93, 114, 160)",
+        "net_idle": "#acb1bb",
+        "net_idle_border": "#8c939f",
+        "net_online": "#22c55e",
+        "net_online_border": "#15803d",
+        "net_offline": "#ef4444",
+        "net_offline_border": "#b91c1c",
+        # Button-specific overrides: keep gray theme matte, but controls remain vivid.
+        "btn_primary_bg": "#3e71c4",
+        "btn_primary_hover": "#5085db",
+        "btn_primary_text": "#ffffff",
+        "btn_primary_border": "#8eb3ee",
+        "btn_success_bg": "#1f8f7d",
+        "btn_success_hover": "#2aa792",
+        "btn_success_text": "#ffffff",
+        "btn_success_border": "#7cd4c3",
+        "btn_danger_bg": "#ca4f5c",
+        "btn_danger_hover": "#dc6170",
+        "btn_danger_text": "#ffffff",
+        "btn_danger_border": "#ee9aa3",
+        "btn_warning_bg": "#8f6a2e",
+        "btn_warning_hover": "#a9813f",
+        "btn_warning_text": "#fffdf7",
+        "btn_warning_border": "#d2b173",
     },
 }
 
@@ -98,6 +143,9 @@ class ThemeManager(QObject):
             return default
         return THEMES["dark"].get(key, "#000000")
 
+    def available_themes(self) -> list[str]:
+        return ["dark", "steel", "graphite_pro"]
+
 
 _THEME_MANAGER = ThemeManager()
 
@@ -108,6 +156,10 @@ def get_theme_manager() -> ThemeManager:
 
 def theme_color(key: str, default: str | None = None) -> str:
     return _THEME_MANAGER.color(key, default=default)
+
+
+def available_themes() -> list[str]:
+    return _THEME_MANAGER.available_themes()
 
 
 def build_app_stylesheet() -> str:
@@ -163,17 +215,69 @@ def build_app_stylesheet() -> str:
 def button_style(kind: str, padding: str = "5px 10px", bold: bool = False) -> str:
     c = get_theme_manager().colors()
     mapping = {
-        "primary": ("accent_bg", "accent", "accent", "accent_bg_hover"),
-        "success": ("success_bg", "success", "success", "success_bg_hover"),
-        "danger": ("danger_bg", "danger", "danger", "danger_bg_hover"),
-        "warning": ("warning_bg", "warning", "warning", "warning_bg_hover"),
+        "primary": (
+            "btn_primary_bg",
+            "accent_bg",
+            "btn_primary_text",
+            "accent",
+            "btn_primary_border",
+            "accent",
+            "btn_primary_hover",
+            "accent_bg_hover",
+        ),
+        "success": (
+            "btn_success_bg",
+            "success_bg",
+            "btn_success_text",
+            "success",
+            "btn_success_border",
+            "success",
+            "btn_success_hover",
+            "success_bg_hover",
+        ),
+        "danger": (
+            "btn_danger_bg",
+            "danger_bg",
+            "btn_danger_text",
+            "danger",
+            "btn_danger_border",
+            "danger",
+            "btn_danger_hover",
+            "danger_bg_hover",
+        ),
+        "warning": (
+            "btn_warning_bg",
+            "warning_bg",
+            "btn_warning_text",
+            "warning",
+            "btn_warning_border",
+            "warning",
+            "btn_warning_hover",
+            "warning_bg_hover",
+        ),
         "secondary": ("surface_alt", "text_muted", "text_muted", "border"),
     }
-    bg_key, text_key, border_key, hover_key = mapping.get(kind, mapping["secondary"])
+    if kind == "secondary":
+        bg_key, text_key, border_key, hover_key = mapping["secondary"]
+    else:
+        (
+            btn_bg_key,
+            fallback_bg_key,
+            btn_text_key,
+            fallback_text_key,
+            btn_border_key,
+            fallback_border_key,
+            btn_hover_key,
+            fallback_hover_key,
+        ) = mapping.get(kind, mapping["primary"])
+        bg_key = btn_bg_key if btn_bg_key in c else fallback_bg_key
+        text_key = btn_text_key if btn_text_key in c else fallback_text_key
+        border_key = btn_border_key if btn_border_key in c else fallback_border_key
+        hover_key = btn_hover_key if btn_hover_key in c else fallback_hover_key
+
     weight = "font-weight: bold;" if bold else ""
     return (
         f"QPushButton {{ background-color: {c[bg_key]}; color: {c[text_key]}; "
         f"border: 1px solid {c[border_key]}; border-radius: 4px; padding: {padding}; {weight}}}"
         f" QPushButton:hover {{ background-color: {c[hover_key]}; }}"
     )
-
