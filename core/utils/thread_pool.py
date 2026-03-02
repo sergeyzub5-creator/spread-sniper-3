@@ -35,7 +35,6 @@ class Worker(QRunnable):
         finally:
             if self.signals:
                 self._safe_emit(self.signals.finished)
-            self.signals = None
 
 
 class ThreadManager:

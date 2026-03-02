@@ -52,6 +52,7 @@ class ExchangeStorage:
                     "api_key": ex.api_key,
                     "api_secret": ex.api_secret,
                     "testnet": ex.testnet,
+                    "auto_connect": bool(getattr(ex, "auto_connect", True)),
                 }
                 if hasattr(ex, "api_passphrase"):
                     data["api_passphrase"] = getattr(ex, "api_passphrase")

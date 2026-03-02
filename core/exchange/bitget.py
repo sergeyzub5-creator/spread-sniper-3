@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import hmac
 import json
@@ -84,7 +84,9 @@ class BitgetExchange(BaseExchange):
                 return None
 
             if not self._is_latin1(self.api_key) or not self._is_latin1(self.api_passphrase):
-                self.error.emit(self.name, "API ключ/пароль Bitget должны быть на латинице")
+                msg = "API ключ/пароль Bitget должны быть на латинице"
+                self.last_error = msg
+                self.error.emit(self.name, msg)
                 return None
 
             timestamp = str(int(time.time() * 1000) + self.time_offset)
@@ -183,6 +185,7 @@ class BitgetExchange(BaseExchange):
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
             msg = "Для Bitget нужны API ключ, API секрет и пароль API"
+            self.last_error = msg
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
@@ -196,15 +199,20 @@ class BitgetExchange(BaseExchange):
             signed=False,
         )
         if not contracts:
-            self.error.emit(self.name, "Bitget недоступна или указан неверный тип продукта")
+            msg = "Bitget недоступна или указан неверный тип продукта"
+            self.last_error = msg
+            self.error.emit(self.name, msg)
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "Ошибка авторизации Bitget")
+            msg = "Ошибка авторизации Bitget"
+            self.last_error = msg
+            self.error.emit(self.name, msg)
             return False
 
+        self.last_error = ""
         self.balance = balance
         self.positions = positions
         self.pnl = sum(pos.get("pnl", 0.0) for pos in self.positions)
@@ -228,3 +236,48 @@ class BitgetExchange(BaseExchange):
     def unsubscribe_price(self, symbol):
         logger.info("%s отписка от %s", self.name, symbol)
 
+    def close_all_positions(self):
+        if not self.is_connected:
+            return 0
+
+        positions = self._fetch_positions()
+        if positions is None:
+            raise RuntimeError("Bitget: не удалось получить позиции для закрытия")
+
+        if not positions:
+            self.positions = []
+            self.pnl = 0.0
+            self.positions_updated.emit(self.name, self.positions)
+            self.pnl_updated.emit(self.name, self.pnl)
+            return 0
+
+        failed = []
+        for pos in positions:
+            symbol = str(pos.get("symbol", "") or "")
+            if not symbol:
+                continue
+            hold_side = "long" if float(pos.get("size", 0.0)) > 0 else "short"
+            payload = {
+                "symbol": symbol,
+                "productType": self.product_type,
+                "holdSide": hold_side,
+            }
+            response = self._request("POST", "/api/v2/mix/order/close-positions", params=payload, signed=True)
+            if response is None:
+                failed.append(symbol)
+
+        balance = self._fetch_balance()
+        positions_after = self._fetch_positions()
+        if balance is not None:
+            self.balance = balance
+            self.balance_updated.emit(self.name, self.balance)
+        if positions_after is not None:
+            self.positions = positions_after
+            self.pnl = sum(pos.get("pnl", 0.0) for pos in positions_after)
+            self.positions_updated.emit(self.name, self.positions)
+            self.pnl_updated.emit(self.name, self.pnl)
+
+        if failed:
+            raise RuntimeError(f"Bitget: не закрыты позиции {', '.join(sorted(set(failed)))}")
+
+        return len(positions)

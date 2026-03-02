@@ -252,32 +252,37 @@ class MainWindow(QMainWindow):
         try:
             exchange = create_exchange(name, type_code, params)
         except Exception as exc:
-            logger.exception("Не удалось создать подключение %s (%s): %s", name, type_code, exc)
+            detail = str(exc).strip() or tr("main.error.create_connection")
+            logger.exception("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїРѕРґРєР»СЋС‡РµРЅРёРµ %s (%s): %s", name, type_code, exc)
             self.status_bar.show_error(
                 tr("main.error.create_connector", exchange=type_code.upper(), name=name)
             )
-            self.exchanges_tab.set_new_panel_error(tr("main.error.create_connection"))
+            self.exchanges_tab.set_new_panel_error(detail)
             return
 
         is_existing = self.exchange_manager.get_exchange(name) is not None
 
-        # Новую биржу добавляем в менеджер только после успешного подключения.
+        # РќРѕРІСѓСЋ Р±РёСЂР¶Сѓ РґРѕР±Р°РІР»СЏРµРј РІ РјРµРЅРµРґР¶РµСЂ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ СѓСЃРїРµС€РЅРѕРіРѕ РїРѕРґРєР»СЋС‡РµРЅРёСЏ.
         if not is_existing and params.get("api_key") and params.get("api_secret"):
             try:
                 connected = bool(exchange.connect())
             except Exception as exc:
-                logger.exception("Не удалось подключить новую биржу %s (%s): %s", name, type_code, exc)
+                detail = str(exc).strip() or tr("main.error.connect_failed_short")
+                logger.exception("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊ РЅРѕРІСѓСЋ Р±РёСЂР¶Сѓ %s (%s): %s", name, type_code, exc)
                 self.status_bar.show_error(
                     tr("main.error.connect", exchange=type_code.upper(), name=name)
                 )
-                self.exchanges_tab.set_new_panel_error(tr("main.error.connect_failed_short"))
+                self.exchanges_tab.set_new_panel_error(detail)
                 return
 
             if not connected:
+                detail = str(getattr(exchange, "last_error", "") or "").strip()
+                if not detail:
+                    detail = tr("main.error.connect_failed_short")
                 self.status_bar.show_error(
                     tr("main.error.connect_failed", exchange=type_code.upper(), name=name)
                 )
-                self.exchanges_tab.set_new_panel_error(tr("main.error.connect_failed_short"))
+                self.exchanges_tab.set_new_panel_error(detail)
                 return
 
         if is_existing:
@@ -304,9 +309,9 @@ class MainWindow(QMainWindow):
             status_text = status.get("status_text", "")
             lower_text = status_text.lower()
             if (
-                "ошибка" in lower_text
+                "РѕС€РёР±РєР°" in lower_text
                 or "error" in lower_text
-                or "не реализовано" in lower_text
+                or "РЅРµ СЂРµР°Р»РёР·РѕРІР°РЅРѕ" in lower_text
                 or "not implemented" in lower_text
             ):
                 exchange = self.exchange_manager.get_exchange(name)

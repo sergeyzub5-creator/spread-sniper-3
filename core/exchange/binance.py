@@ -95,8 +95,10 @@ class BinanceExchange(BaseExchange):
 
     def _fetch_balance(self):
         account = self._request("GET", "/fapi/v2/account", signed=True)
-        if not account or "assets" not in account:
-            return 0.0
+        if account is None:
+            return None
+        if "assets" not in account:
+            return None
 
         total = 0.0
         for asset in account["assets"]:
@@ -106,6 +108,8 @@ class BinanceExchange(BaseExchange):
 
     def _fetch_positions(self):
         positions = self._request("GET", "/fapi/v3/positionRisk", signed=True)
+        if positions is None:
+            return None
         if not positions:
             return []
 
@@ -130,19 +134,27 @@ class BinanceExchange(BaseExchange):
 
         if not self.api_key or not self.api_secret:
             msg = "Для Binance нужны API ключ и API секрет"
+            self.last_error = msg
             self.error.emit(self.name, msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         self.time_offset = self._get_server_time_offset()
         if self._request("GET", "/fapi/v1/time") is None:
-            self.error.emit(self.name, "Binance недоступна или нет сети")
+            msg = "Binance недоступна или нет сети"
+            self.last_error = msg
+            self.error.emit(self.name, msg)
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
+        if balance is None or positions is None:
+            msg = "Ошибка авторизации Binance"
+            self.last_error = msg
+            self.error.emit(self.name, msg)
+            return False
 
-        # If private calls fail, balance stays 0 and positions empty.
+        self.last_error = ""
         self.balance = balance
         self.positions = positions
         self.pnl = sum(pos.get("pnl", 0.0) for pos in positions)
@@ -165,3 +177,68 @@ class BinanceExchange(BaseExchange):
 
     def unsubscribe_price(self, symbol):
         logger.info("%s отписка от %s", self.name, symbol)
+
+    def close_all_positions(self):
+        if not self.is_connected:
+            return 0
+
+        payload = self._request("GET", "/fapi/v3/positionRisk", signed=True)
+        if payload is None:
+            raise RuntimeError("Binance: не удалось получить позиции для закрытия")
+
+        positions = []
+        for row in payload:
+            amount = self._to_float(row.get("positionAmt"))
+            if amount == 0:
+                continue
+            positions.append(
+                {
+                    "symbol": row.get("symbol", ""),
+                    "amount": amount,
+                    "position_side": str(row.get("positionSide", "BOTH") or "BOTH"),
+                }
+            )
+
+        if not positions:
+            self.positions = []
+            self.pnl = 0.0
+            self.positions_updated.emit(self.name, self.positions)
+            self.pnl_updated.emit(self.name, self.pnl)
+            return 0
+
+        failed = []
+        for pos in positions:
+            amount = float(pos["amount"])
+            qty = f"{abs(amount):.12f}".rstrip("0").rstrip(".")
+            if not qty:
+                continue
+
+            order_params = {
+                "symbol": pos["symbol"],
+                "side": "SELL" if amount > 0 else "BUY",
+                "type": "MARKET",
+                "quantity": qty,
+                "reduceOnly": "true",
+            }
+            if pos["position_side"] and pos["position_side"] != "BOTH":
+                order_params["positionSide"] = pos["position_side"]
+
+            response = self._request("POST", "/fapi/v1/order", signed=True, params=order_params)
+            if response is None:
+                failed.append(pos["symbol"])
+
+        balance = self._fetch_balance()
+        positions_after = self._fetch_positions()
+        if balance is not None:
+            self.balance = balance
+            self.balance_updated.emit(self.name, self.balance)
+        if positions_after is not None:
+            self.positions = positions_after
+            self.pnl = sum(pos.get("pnl", 0.0) for pos in positions_after)
+            self.positions_updated.emit(self.name, self.positions)
+            self.pnl_updated.emit(self.name, self.pnl)
+
+        if failed:
+            raise RuntimeError(f"Binance: не закрыты позиции {', '.join(sorted(set(failed)))}")
+
+        return len(positions)

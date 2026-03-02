@@ -1,12 +1,50 @@
 import socket
 from datetime import datetime
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel
+from PySide6.QtCore import QRectF, QTimer, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from core.i18n import tr
 from core.utils.thread_pool import ThreadManager, Worker
 from ui.styles import theme_color
+
+
+class WifiIndicator(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._main_color = QColor(theme_color("net_idle"))
+        self._accent_color = QColor(theme_color("net_idle_border"))
+        self.setFixedSize(16, 16)
+
+    def set_colors(self, main_color, accent_color):
+        self._main_color = QColor(main_color)
+        self._accent_color = QColor(accent_color)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        cx = self.width() / 2.0
+        base_y = self.height() + 1.0
+
+        for radius in (3.0, 5.5, 7.5):
+            rect = QRectF(
+                cx - radius,
+                base_y - radius * 2.0,
+                radius * 2.0,
+                radius * 2.0,
+            )
+            pen = QPen(self._main_color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawArc(rect, 0, 180 * 16)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._accent_color)
+        painter.drawEllipse(int(cx - 1.6), int(base_y - 2.4), 3, 3)
 
 
 class NetworkStatusBar(QFrame):
@@ -21,12 +59,7 @@ class NetworkStatusBar(QFrame):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(8)
 
-        self.net_indicator = QLabel("")
-        self.net_indicator.setFixedSize(10, 10)
-        self.net_indicator.setStyleSheet(
-            f"background-color: {theme_color('net_idle')}; "
-            f"border: 1px solid {theme_color('net_idle_border')}; border-radius: 5px;"
-        )
+        self.net_indicator = WifiIndicator()
         layout.addWidget(self.net_indicator)
 
         self.wifi_label = QLabel("")
@@ -89,25 +122,25 @@ class NetworkStatusBar(QFrame):
 
     def _apply_network_state(self):
         if self._online is None:
-            self.net_indicator.setStyleSheet(
-                f"background-color: {theme_color('net_idle')}; "
-                f"border: 1px solid {theme_color('net_idle_border')}; border-radius: 5px;"
+            self.net_indicator.set_colors(
+                theme_color("net_idle"),
+                theme_color("net_idle_border"),
             )
             self.wifi_label.setText(tr("status.net_checking"))
             self.wifi_label.setStyleSheet(f"color: {theme_color('text_muted')};")
             return
 
         if self._online:
-            self.net_indicator.setStyleSheet(
-                f"background-color: {theme_color('net_online')}; "
-                f"border: 1px solid {theme_color('net_online_border')}; border-radius: 5px;"
+            self.net_indicator.set_colors(
+                theme_color("net_online"),
+                theme_color("net_online_border"),
             )
             self.wifi_label.setText(tr("status.net_online"))
             self.wifi_label.setStyleSheet(f"color: {theme_color('success')};")
         else:
-            self.net_indicator.setStyleSheet(
-                f"background-color: {theme_color('net_offline')}; "
-                f"border: 1px solid {theme_color('net_offline_border')}; border-radius: 5px;"
+            self.net_indicator.set_colors(
+                theme_color("net_offline"),
+                theme_color("net_offline_border"),
             )
             self.wifi_label.setText(tr("status.net_offline"))
             self.wifi_label.setStyleSheet(f"color: {theme_color('danger')};")
