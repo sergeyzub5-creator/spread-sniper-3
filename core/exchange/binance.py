@@ -178,6 +178,36 @@ class BinanceExchange(BaseExchange):
     def unsubscribe_price(self, symbol):
         logger.info("%s отписка от %s", self.name, symbol)
 
+    def get_trading_pairs(self, limit=400):
+        url = f"{self.rest_url}/fapi/v1/exchangeInfo"
+        try:
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("%s: Binance не удалось получить список пар: %s", self.name, exc)
+            return super().get_trading_pairs(limit=limit)
+
+        pairs = []
+        seen = set()
+        for row in payload.get("symbols") or []:
+            status = str(row.get("status", "")).upper()
+            if status and status != "TRADING":
+                continue
+
+            symbol = self._normalize_symbol(row.get("symbol"))
+            if not symbol or symbol in seen:
+                continue
+
+            seen.add(symbol)
+            pairs.append(symbol)
+
+        if pairs:
+            self.symbols = list(pairs)
+            limit_value = max(1, int(limit or 1))
+            return pairs[:limit_value]
+        return super().get_trading_pairs(limit=limit)
+
     def close_all_positions(self):
         if not self.is_connected:
             return 0

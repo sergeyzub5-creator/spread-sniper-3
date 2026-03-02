@@ -35,6 +35,15 @@ class BaseExchange(QObject):
         self.balance_refresh_interval_sec = 3.0
         self._last_balance_refresh_ts = 0.0
 
+    @staticmethod
+    def _normalize_symbol(value):
+        text = str(value or "").strip().upper()
+        if not text:
+            return ""
+        for ch in ("-", "_", " ", "/"):
+            text = text.replace(ch, "")
+        return text
+
     def connect(self):
         raise NotImplementedError
 
@@ -46,6 +55,41 @@ class BaseExchange(QObject):
 
     def unsubscribe_price(self, symbol):
         raise NotImplementedError
+
+    def get_trading_pairs(self, limit=400):
+        pairs = []
+        seen = set()
+
+        for raw in self.symbols or []:
+            symbol = self._normalize_symbol(raw)
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                pairs.append(symbol)
+
+        for pos in self.positions or []:
+            symbol = self._normalize_symbol(pos.get("symbol"))
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                pairs.append(symbol)
+
+        if not pairs:
+            pairs = [
+                "BTCUSDT",
+                "ETHUSDT",
+                "SOLUSDT",
+                "BNBUSDT",
+                "XRPUSDT",
+                "DOGEUSDT",
+                "ADAUSDT",
+                "TRXUSDT",
+                "LTCUSDT",
+                "LINKUSDT",
+                "AVAXUSDT",
+                "DOTUSDT",
+            ]
+
+        limit_value = max(1, int(limit or 1))
+        return pairs[:limit_value]
 
     def close_all_positions(self):
         raise NotImplementedError(

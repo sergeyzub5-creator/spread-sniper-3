@@ -47,9 +47,19 @@ venv\Scripts\python.exe main.py
 - `core/i18n/` - language manager and translation dictionaries
 - `ui/` - PySide6 interface
 - `ui/styles/theme_manager.py` - centralized theme tokens and style builders
-- `scripts/` - utility scripts (snapshot, github backup, safe codex launcher)
+- `scripts/` - utility scripts (snapshot, github backup, i18n check, safe codex launcher)
 
 ## Development Rules
 
 - `PROJECT_PASSPORT.md` - full architecture map of the project.
 - `DEVELOPMENT_STANDARDS.md` - mandatory rules for new modules (themes + languages).
+
+## i18n Check
+
+```powershell
+py scripts/check_i18n.py
+py scripts/check_i18n.py --strict
+```
+
+- `scripts/github-backup.ps1` runs `check_i18n.py` before commit by default.
+- Optional flags: `-StrictI18n` (fail on hardcoded UI strings), `-SkipI18nCheck` (skip pre-check).

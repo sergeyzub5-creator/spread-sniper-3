@@ -3,7 +3,9 @@
     [string]$Note = "",
     [string]$Remote = "origin",
     [switch]$NoPush,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$SkipI18nCheck,
+    [switch]$StrictI18n
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -33,7 +35,39 @@ Write-Host "Repo: $repoRoot"
 Write-Host "Branch: $branch"
 Write-Host "Remote: $Remote"
 Write-Host "Message: $commitMessage"
+Write-Host "I18n check: $(if ($SkipI18nCheck) { 'skip' } elseif ($StrictI18n) { 'strict' } else { 'standard' })"
 Write-Host ""
+
+if (-not $SkipI18nCheck) {
+    $pythonCmd = $null
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        $pythonCmd = "py"
+    }
+    elseif (Get-Command python -ErrorAction SilentlyContinue) {
+        $pythonCmd = "python"
+    }
+
+    if (-not $pythonCmd) {
+        Write-Host "ERROR: Python launcher not found (`py` or `python`) for i18n check."
+        exit 1
+    }
+
+    $i18nArgs = @("scripts/check_i18n.py")
+    if ($StrictI18n) {
+        $i18nArgs += "--strict"
+    }
+
+    Write-Host "[pre-check] i18n: running $pythonCmd $($i18nArgs -join ' ')"
+    Push-Location $repoRoot
+    & $pythonCmd @i18nArgs
+    $i18nExitCode = $LASTEXITCODE
+    Pop-Location
+
+    if ($i18nExitCode -ne 0) {
+        Write-Host "ERROR: i18n check failed. Fix translation issues or run with -SkipI18nCheck."
+        exit $i18nExitCode
+    }
+}
 
 if ($DryRun) {
     Write-Host "DRY RUN: no changes will be committed or pushed."

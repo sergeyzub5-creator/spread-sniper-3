@@ -236,6 +236,45 @@ class BitgetExchange(BaseExchange):
     def unsubscribe_price(self, symbol):
         logger.info("%s отписка от %s", self.name, symbol)
 
+    def get_trading_pairs(self, limit=400):
+        url = f"{self.base_url}/api/v2/mix/market/contracts"
+        params = {"productType": self.product_type}
+        headers = {"Content-Type": "application/json"}
+        if self.testnet:
+            headers["paptrading"] = "1"
+
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("%s: Bitget не удалось получить список пар: %s", self.name, exc)
+            return super().get_trading_pairs(limit=limit)
+
+        if str(payload.get("code")) != "00000":
+            logger.warning("%s: Bitget список пар вернул код %s", self.name, payload.get("code"))
+            return super().get_trading_pairs(limit=limit)
+
+        pairs = []
+        seen = set()
+        for row in payload.get("data") or []:
+            status = str(row.get("symbolStatus") or row.get("status") or "").strip().lower()
+            if status and status not in {"normal", "listed", "trading"}:
+                continue
+
+            symbol = self._normalize_symbol(row.get("symbol"))
+            if not symbol or symbol in seen:
+                continue
+
+            seen.add(symbol)
+            pairs.append(symbol)
+
+        if pairs:
+            self.symbols = list(pairs)
+            limit_value = max(1, int(limit or 1))
+            return pairs[:limit_value]
+        return super().get_trading_pairs(limit=limit)
+
     def close_all_positions(self):
         if not self.is_connected:
             return 0
