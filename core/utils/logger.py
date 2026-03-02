@@ -19,12 +19,13 @@ def setup_logger(level=logging.INFO):
     
     try:
         file_handler = logging.FileHandler(
-            f'debug_{datetime.now().strftime("%Y%m%d")}.log', 
+            f'debug_{datetime.now().strftime("%Y%m%d")}.log',
             encoding='utf-8'
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-    except:
+    except OSError:
+        # Keep console logging even if file logging cannot be initialized.
         pass
     
     return logger

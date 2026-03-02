@@ -1,137 +1,167 @@
-﻿import time
-import hmac
 import hashlib
+import hmac
+import time
 from urllib.parse import urlencode
+
 import requests
+
 from core.exchange.base import BaseExchange
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 class BinanceExchange(BaseExchange):
+    exchange_type = "binance"
+
     def __init__(self, name, api_key=None, api_secret=None, testnet=False):
         super().__init__(name, api_key, api_secret, testnet)
-        
-        if testnet:
-            self.rest_url = "https://testnet.binancefuture.com"
-        else:
-            self.rest_url = "https://fapi.binance.com"
-        
+
+        # Binance USD-M Futures base URLs from official docs.
+        self.rest_url = "https://demo-fapi.binance.com" if testnet else "https://fapi.binance.com"
+        self.timeout = 10
         self.session = requests.Session()
         if api_key:
-            self.session.headers.update({'X-MBX-APIKEY': api_key})
-        
+            self.session.headers.update({"X-MBX-APIKEY": api_key})
         self.time_offset = self._get_server_time_offset()
-    
+
+    @staticmethod
+    def _to_float(value, default=0.0):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def _get_server_time_offset(self):
         try:
-            response = requests.get(f"{self.rest_url}/fapi/v1/time")
-            if response.status_code == 200:
-                server_time = response.json().get('serverTime')
-                local_time = int(time.time() * 1000)
-                return server_time - local_time
-        except Exception as e:
-            logger.error(f"Ошибка получения времени сервера: {e}")
-        return 0
-    
-    def _sign_request(self, params):
-        if not self.api_secret:
-            return params
-        query_string = urlencode(params)
+            response = self.session.get(f"{self.rest_url}/fapi/v1/time", timeout=self.timeout)
+            response.raise_for_status()
+            server_time = response.json().get("serverTime")
+            if server_time is None:
+                return 0
+            local_time = int(time.time() * 1000)
+            return int(server_time) - local_time
+        except requests.RequestException as exc:
+            logger.error("Ошибка получения времени Binance: %s", exc)
+            return 0
+
+    def _sign_params(self, params):
+        query_string = urlencode(params, doseq=True)
         signature = hmac.new(
-            self.api_secret.encode('utf-8'),
-            query_string.encode('utf-8'),
-            hashlib.sha256
+            self.api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
-        params['signature'] = signature
-        return params
-    
+        signed = dict(params)
+        signed["signature"] = signature
+        return signed
+
     def _request(self, method, endpoint, signed=False, params=None):
-        if params is None:
-            params = {}
+        method = method.upper()
+        params = dict(params or {})
         url = f"{self.rest_url}{endpoint}"
-        
+
         if signed:
-            params['timestamp'] = int(time.time() * 1000) + self.time_offset
-            params = self._sign_request(params)
-        
-        try:
-            if method == 'GET':
-                response = self.session.get(url, params=params)
-            else:
-                response = self.session.post(url, json=params)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Binance API ошибка {response.status_code}: {response.text}")
+            if not self.api_key or not self.api_secret:
+                logger.error("%s: отсутствуют API credentials для signed-запроса", self.name)
                 return None
-        except Exception as e:
-            logger.error(f"Binance ошибка запроса: {e}")
-            return None
-    
-    def _fetch_balance(self):
-        try:
-            account = self._request('GET', '/fapi/v2/account', signed=True)
-            if account and 'assets' in account:
-                total = 0
-                for asset in account['assets']:
-                    if asset['asset'] in ['USDT', 'BUSD', 'USDC']:
-                        total += float(asset['walletBalance'])
-                return total
-            return 0
-        except Exception as e:
-            logger.error(f"Ошибка получения баланса: {e}")
-            return 0
-    
-    def _fetch_positions(self):
-        try:
-            positions = self._request('GET', '/fapi/v2/positionRisk', signed=True)
-            if positions:
-                open_positions = []
-                for pos in positions:
-                    if float(pos.get('positionAmt', 0)) != 0:
-                        open_positions.append({
-                            'symbol': pos['symbol'],
-                            'size': float(pos['positionAmt']),
-                            'entry_price': float(pos['entryPrice']),
-                            'mark_price': float(pos['markPrice']),
-                            'pnl': float(pos['unRealizedProfit'])
-                        })
-                return open_positions
-            return []
-        except Exception as e:
-            logger.error(f"Ошибка получения позиций: {e}")
-            return []
-    
-    def connect(self):
-        logger.info(f"{self.name} попытка подключения...")
-        self.time_offset = self._get_server_time_offset()
-        info = self._request('GET', '/fapi/v1/exchangeInfo')
-        
-        if info:
-            self.is_connected = True
-            self.connected.emit(self.name)
-            self.balance = self._fetch_balance()
-            self.positions = self._fetch_positions()
-            self.balance_updated.emit(self.name, self.balance)
-            self.positions_updated.emit(self.name, self.positions)
-            total_pnl = sum(p.get('pnl', 0) for p in self.positions)
-            self.pnl = total_pnl
-            self.pnl_updated.emit(self.name, total_pnl)
-            logger.info(f"✅ {self.name} подключена")
-            return True
+            params.setdefault("recvWindow", 5000)
+            params["timestamp"] = int(time.time() * 1000) + self.time_offset
+            params = self._sign_params(params)
+
+        request_kwargs = {"timeout": self.timeout}
+        if method in {"GET", "DELETE"}:
+            request_kwargs["params"] = params
         else:
-            self.error.emit(self.name, "Ошибка подключения")
+            # Binance expects form-encoded payload for signed trade requests.
+            request_kwargs["data"] = params
+
+        try:
+            response = self.session.request(method, url, **request_kwargs)
+        except requests.RequestException as exc:
+            logger.error("Binance %s %s ошибка сети: %s", method, endpoint, exc)
+            return None
+
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+
+        if response.ok:
+            return payload
+
+        logger.error("Binance %s %s ошибка %s: %s", method, endpoint, response.status_code, payload)
+        return None
+
+    def _fetch_balance(self):
+        account = self._request("GET", "/fapi/v2/account", signed=True)
+        if not account or "assets" not in account:
+            return 0.0
+
+        total = 0.0
+        for asset in account["assets"]:
+            if asset.get("asset") in {"USDT", "BUSD", "USDC"}:
+                total += self._to_float(asset.get("walletBalance"))
+        return total
+
+    def _fetch_positions(self):
+        positions = self._request("GET", "/fapi/v3/positionRisk", signed=True)
+        if not positions:
+            return []
+
+        open_positions = []
+        for pos in positions:
+            size = self._to_float(pos.get("positionAmt"))
+            if size == 0:
+                continue
+            open_positions.append(
+                {
+                    "symbol": pos.get("symbol", ""),
+                    "size": size,
+                    "entry_price": self._to_float(pos.get("entryPrice")),
+                    "mark_price": self._to_float(pos.get("markPrice")),
+                    "pnl": self._to_float(pos.get("unRealizedProfit")),
+                }
+            )
+        return open_positions
+
+    def connect(self):
+        logger.info("%s попытка подключения...", self.name)
+
+        if not self.api_key or not self.api_secret:
+            msg = "API Key и API Secret обязательны для Binance"
+            self.error.emit(self.name, msg)
+            logger.error("%s: %s", self.name, msg)
             return False
-    
+
+        self.time_offset = self._get_server_time_offset()
+        if self._request("GET", "/fapi/v1/time") is None:
+            self.error.emit(self.name, "Binance недоступна или нет сети")
+            return False
+
+        balance = self._fetch_balance()
+        positions = self._fetch_positions()
+
+        # If private calls fail, balance stays 0 and positions empty.
+        self.balance = balance
+        self.positions = positions
+        self.pnl = sum(pos.get("pnl", 0.0) for pos in positions)
+        self.is_connected = True
+
+        self.connected.emit(self.name)
+        self.balance_updated.emit(self.name, self.balance)
+        self.positions_updated.emit(self.name, self.positions)
+        self.pnl_updated.emit(self.name, self.pnl)
+        logger.info("%s подключена", self.name)
+        return True
+
     def disconnect(self):
         self.is_connected = False
         self.disconnected.emit(self.name)
-        logger.info(f"✅ {self.name} отключена")
-    
+        logger.info("%s отключена", self.name)
+
     def subscribe_price(self, symbol):
-        logger.info(f"{self.name} подписка на {symbol}")
-    
+        logger.info("%s подписка на %s", self.name, symbol)
+
     def unsubscribe_price(self, symbol):
-        logger.info(f"{self.name} отписка от {symbol}")
+        logger.info("%s отписка от %s", self.name, symbol)

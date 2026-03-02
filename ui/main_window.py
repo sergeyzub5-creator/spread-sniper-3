@@ -45,7 +45,11 @@ class MainWindow(QMainWindow):
         else:
             return
         
-        self.exchange_manager.add_exchange(exchange)
+        if self.exchange_manager.get_exchange(name):
+            self.exchange_manager.update_exchange(name, exchange)
+        else:
+            self.exchange_manager.add_exchange(exchange)
+
         if params.get('api_key') and params.get('api_secret'):
             exchange.connect()
     
