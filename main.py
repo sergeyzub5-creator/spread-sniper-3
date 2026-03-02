@@ -2,7 +2,6 @@
 import sys
 import os
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -14,6 +13,7 @@ from core.i18n import get_language_manager, tr
 from ui.styles import get_theme_manager
 from ui.main_window import MainWindow
 from ui.widgets.brand_header import build_neon_app_icon
+from ui.widgets.startup_splash import StartupSplash
 
 def exception_hook(exctype, value, tb):
     import traceback
@@ -38,6 +38,9 @@ if __name__ == "__main__":
     
     window = MainWindow()
     window.setWindowIcon(app_icon)
-    window.show()
+
+    splash = StartupSplash()
+    splash.finished.connect(window.show)
+    splash.start()
     
     sys.exit(app.exec())
