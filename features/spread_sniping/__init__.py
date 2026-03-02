@@ -1,0 +1,2 @@
+"""Spread sniping feature package."""
+

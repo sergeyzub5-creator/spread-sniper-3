@@ -25,6 +25,7 @@ class BinanceExchange(BaseExchange):
         if api_key:
             self.session.headers.update({"X-MBX-APIKEY": api_key})
         self.time_offset = 0
+        self._last_api_error = ""
 
     @staticmethod
     def _to_float(value, default=0.0):
@@ -57,13 +58,15 @@ class BinanceExchange(BaseExchange):
         signed["signature"] = signature
         return signed
 
-    def _request(self, method, endpoint, signed=False, params=None):
+    def _request(self, method, endpoint, signed=False, params=None, _retried_after_time_sync=False):
         method = method.upper()
-        params = dict(params or {})
+        source_params = dict(params or {})
+        params = dict(source_params)
         url = f"{self.rest_url}{endpoint}"
 
         if signed:
             if not self.api_key or not self.api_secret:
+                self._last_api_error = "отсутствуют API-данные для подписанного запроса"
                 logger.error("%s: отсутствуют API-данные для подписанного запроса", self.name)
                 return None
             params.setdefault("recvWindow", 5000)
@@ -80,6 +83,7 @@ class BinanceExchange(BaseExchange):
         try:
             response = self.session.request(method, url, **request_kwargs)
         except requests.RequestException as exc:
+            self._last_api_error = f"{endpoint}: сеть ({exc})"
             logger.error("Binance %s %s ошибка сети: %s", method, endpoint, exc)
             return None
 
@@ -89,7 +93,36 @@ class BinanceExchange(BaseExchange):
             payload = {"raw": response.text}
 
         if response.ok:
+            self._last_api_error = ""
             return payload
+
+        error_code = None
+        error_msg = ""
+        if isinstance(payload, dict):
+            error_code = payload.get("code")
+            error_msg = str(payload.get("msg") or "").strip()
+        elif payload is not None:
+            error_msg = str(payload)
+
+        # Binance can reject signed requests due to local clock drift.
+        # Retry once after server-time sync.
+        if signed and str(error_code) == "-1021" and not _retried_after_time_sync:
+            self.time_offset = self._get_server_time_offset()
+            return self._request(
+                method,
+                endpoint,
+                signed=signed,
+                params=source_params,
+                _retried_after_time_sync=True,
+            )
+
+        if error_msg:
+            if error_code is not None:
+                self._last_api_error = f"{endpoint}: [{error_code}] {error_msg}"
+            else:
+                self._last_api_error = f"{endpoint}: {error_msg}"
+        else:
+            self._last_api_error = f"{endpoint}: HTTP {response.status_code}"
 
         logger.error("Binance %s %s ошибка %s: %s", method, endpoint, response.status_code, payload)
         return None
@@ -222,6 +255,33 @@ class BinanceExchange(BaseExchange):
         text = f"{float(value):.16f}".rstrip("0").rstrip(".")
         return text if text else "0"
 
+    @staticmethod
+    def _step_precision(step):
+        if step <= 0:
+            return -1
+        text = f"{float(step):.16f}".rstrip("0").rstrip(".")
+        if "." not in text:
+            return 0
+        return len(text.split(".", 1)[1])
+
+    def _format_to_step(self, value, step):
+        precision = self._step_precision(step)
+        if precision < 0:
+            return self._qty_to_str(value)
+        if precision == 0:
+            return str(int(round(float(value))))
+        text = f"{float(value):.{precision}f}"
+        text = text.rstrip("0").rstrip(".")
+        return text if text else "0"
+
+    @staticmethod
+    def _round_to_step(value, step):
+        if step <= 0:
+            return value
+        units = value / step
+        rounded = round(units) * step
+        return rounded
+
     def _extract_filter_value(self, filters, filter_type, field):
         for f in filters or []:
             if str(f.get("filterType", "")).upper() == str(filter_type).upper():
@@ -302,6 +362,10 @@ class BinanceExchange(BaseExchange):
             self._extract_filter_value(filters, "MIN_NOTIONAL", "notional"),
             default=0.0,
         )
+        price_tick = self._to_float(
+            self._extract_filter_value(filters, "PRICE_FILTER", "tickSize"),
+            default=0.0,
+        )
 
         qty = lot_min if lot_min > 0 else lot_step
         if qty <= 0:
@@ -319,6 +383,12 @@ class BinanceExchange(BaseExchange):
             price = self._to_float(ticker.get(price_field), default=0.0)
             if price <= 0:
                 price = self._to_float(ticker.get("price"), default=0.0)
+        if not price or price <= 0:
+            raise RuntimeError("Binance: не удалось получить лучшую цену для LIMIT ордера")
+        if price_tick > 0:
+            price = self._round_to_step(price, price_tick)
+        if not price or price <= 0:
+            raise RuntimeError("Binance: рассчитанная цена LIMIT ордера некорректна")
 
         if min_notional > 0 and price and price > 0:
             notional_qty = min_notional / price
@@ -329,11 +399,14 @@ class BinanceExchange(BaseExchange):
         if lot_max > 0 and qty > lot_max:
             raise RuntimeError("Binance: минимальный тестовый объем превышает допустимый максимум")
 
-        qty_str = self._qty_to_str(qty)
+        qty_str = self._format_to_step(qty, lot_step)
+        price_str = self._format_to_step(price, price_tick)
         params = {
             "symbol": normalized_symbol,
             "side": "BUY" if side == "buy" else "SELL",
-            "type": "MARKET",
+            "type": "LIMIT",
+            "timeInForce": "GTC",
+            "price": price_str,
             "quantity": qty_str,
             "newOrderRespType": "RESULT",
         }
@@ -343,6 +416,9 @@ class BinanceExchange(BaseExchange):
 
         response = self._request("POST", "/fapi/v1/order", signed=True, params=params)
         if response is None:
+            details = str(self._last_api_error or "").strip()
+            if details:
+                raise RuntimeError(f"Binance: не удалось открыть тестовую позицию ({details})")
             raise RuntimeError("Binance: не удалось открыть тестовую позицию")
 
         order_id = response.get("orderId")
@@ -382,6 +458,8 @@ class BinanceExchange(BaseExchange):
             "executed_qty": executed_qty_str,
             "status": order_status or "UNKNOWN",
             "avg_price": avg_price,
+            "order_type": "LIMIT",
+            "limit_price": price_str,
             "order_id": order_id,
         }
 

@@ -7,6 +7,8 @@ class SettingsManager:
     UI_LANGUAGE_KEY = "ui/language"
     UI_THEME_KEY = "ui/theme"
     FAST_TRADE_MODE_KEY = "trading/fast_mode"
+    SPREAD_EXCHANGE_KEY_TMPL = "spread/col{index}/exchange"
+    SPREAD_PAIR_KEY_TMPL = "spread/col{index}/pair"
 
     def __new__(cls):
         if cls._instance is None:
@@ -61,3 +63,18 @@ class SettingsManager:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def save_spread_column_selection(self, index, exchange_name, pair_symbol):
+        idx = int(index)
+        exchange_key = self.SPREAD_EXCHANGE_KEY_TMPL.format(index=idx)
+        pair_key = self.SPREAD_PAIR_KEY_TMPL.format(index=idx)
+        self.set_value(exchange_key, str(exchange_name or "").strip())
+        self.set_value(pair_key, str(pair_symbol or "").strip())
+
+    def load_spread_column_selection(self, index):
+        idx = int(index)
+        exchange_key = self.SPREAD_EXCHANGE_KEY_TMPL.format(index=idx)
+        pair_key = self.SPREAD_PAIR_KEY_TMPL.format(index=idx)
+        exchange_name = str(self.get_value(exchange_key, "") or "").strip()
+        pair_symbol = str(self.get_value(pair_key, "") or "").strip()
+        return exchange_name, pair_symbol
