@@ -159,6 +159,7 @@ class ExchangesTab(QWidget):
         super().__init__(parent)
         self.exchange_manager = exchange_manager
         self.exchange_panels = {}
+        self.fast_trade_mode = False
 
         self.new_panel = None
         self.new_panel_exchange_type = None
@@ -173,6 +174,9 @@ class ExchangesTab(QWidget):
         self.exchange_manager.exchange_added.connect(self._on_exchange_added)
         self.exchange_manager.exchange_removed.connect(self._on_exchange_removed)
         self.exchange_manager.status_updated.connect(self._update_all_status)
+
+    def set_fast_trade_mode(self, enabled):
+        self.fast_trade_mode = bool(enabled)
 
     def _init_ui(self):
         layout = QVBoxLayout()
@@ -203,7 +207,7 @@ class ExchangesTab(QWidget):
         self.disconnect_all_btn.setStyleSheet(button_style("danger", padding="6px 12px"))
         self.disconnect_all_btn.clicked.connect(self._disconnect_all)
 
-        self.close_all_positions_btn = QPushButton("⚠ Закрыть все позиции")
+        self.close_all_positions_btn = QPushButton(f"⚠ {tr('action.close_all_positions')}")
         self.close_all_positions_btn.setMinimumWidth(170)
         self.close_all_positions_btn.setStyleSheet(button_style("warning", padding="6px 12px", bold=True))
         self.close_all_positions_btn.clicked.connect(self._close_all_positions)
@@ -263,12 +267,15 @@ class ExchangesTab(QWidget):
         panel.load_saved_data(params)
 
         if status is None:
+            long_count, short_count = self.exchange_manager._count_position_directions(exchange.positions)
             status = {
                 "connected": exchange.is_connected,
                 "loading": False,
                 "testnet": exchange.testnet,
                 "balance": exchange.balance,
                 "positions_count": len(exchange.positions),
+                "long_positions": long_count,
+                "short_positions": short_count,
                 "pnl": exchange.pnl,
                 "status_text": exchange.get_status_text(),
             }
@@ -306,7 +313,7 @@ class ExchangesTab(QWidget):
         self.add_btn.setText(tr("exchanges.add_exchange"))
         self.connect_all_btn.setText(tr("exchanges.connect_all"))
         self.disconnect_all_btn.setText(tr("exchanges.disconnect_all"))
-        self.close_all_positions_btn.setText("⚠ Закрыть все позиции")
+        self.close_all_positions_btn.setText(f"⚠ {tr('action.close_all_positions')}")
 
         for panel in self.exchange_panels.values():
             panel.retranslate_ui()
@@ -416,13 +423,19 @@ class ExchangesTab(QWidget):
         if panel:
             meta = get_exchange_meta(panel.exchange_type)
             display_name = f"{meta['base_name']} ({name})"
-        reply = QMessageBox.question(
-            self,
-            tr("exchanges.confirm_title"),
-            tr("exchanges.confirm_remove", name=display_name),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(tr("exchanges.confirm_title"))
+        box.setText(tr("exchanges.confirm_remove", name=display_name))
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        yes_btn = box.button(QMessageBox.StandardButton.Yes)
+        no_btn = box.button(QMessageBox.StandardButton.No)
+        if yes_btn is not None:
+            yes_btn.setText(tr("action.yes"))
+        if no_btn is not None:
+            no_btn.setText(tr("action.no"))
+        if box.exec() == int(QMessageBox.StandardButton.Yes):
             self.exchange_removed.emit(name)
 
     def _on_exchange_added(self, name):
@@ -471,7 +484,7 @@ class ExchangesTab(QWidget):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         ok_btn = box.button(QMessageBox.StandardButton.Ok)
         if ok_btn is not None:
-            ok_btn.setText("ОК")
+            ok_btn.setText(tr("action.ok"))
         box.exec()
 
     def _show_warning_dialog(self, title, text):
@@ -482,7 +495,7 @@ class ExchangesTab(QWidget):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         ok_btn = box.button(QMessageBox.StandardButton.Ok)
         if ok_btn is not None:
-            ok_btn.setText("ОК")
+            ok_btn.setText(tr("action.ok"))
         box.exec()
 
     def _show_wide_report_dialog(self, title, text, warning=False):
@@ -493,41 +506,49 @@ class ExchangesTab(QWidget):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         ok_btn = box.button(QMessageBox.StandardButton.Ok)
         if ok_btn is not None:
-            ok_btn.setText("ОК")
+            ok_btn.setText(tr("action.ok"))
         # Делаем окно отчета еще уже по ширине (еще в 2 раза).
         box.setStyleSheet("QLabel { min-width: 190px; }")
         box.exec()
 
     def _confirm_close_all_positions(self):
+        if self.fast_trade_mode:
+            return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Подтверждение")
-        box.setText("Закрыть все открытые позиции на всех подключенных биржах?")
+        box.setWindowTitle(tr("exchanges.confirm_title"))
+        box.setText(tr("exchanges.close_positions.confirm_all"))
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.No)
         yes_btn = box.button(QMessageBox.StandardButton.Yes)
         no_btn = box.button(QMessageBox.StandardButton.No)
         if yes_btn is not None:
-            yes_btn.setText("Да")
+            yes_btn.setText(tr("action.yes"))
         if no_btn is not None:
-            no_btn.setText("Отмена")
+            no_btn.setText(tr("action.no"))
         return box.exec() == int(QMessageBox.StandardButton.Yes)
 
     def _close_all_positions(self):
         if self.single_close_worker is not None:
-            self._show_warning_dialog("Закрытие позиций", "Дождитесь завершения текущего закрытия позиций.")
+            self._show_warning_dialog(
+                tr("exchanges.close_positions.title"),
+                tr("exchanges.close_positions.wait_bulk"),
+            )
             return
 
         connected = self.exchange_manager.get_connected_names()
         if not connected:
-            self._show_info_dialog("Закрытие позиций", "Нет подключенных бирж для закрытия позиций.")
+            self._show_info_dialog(
+                tr("exchanges.close_positions.title"),
+                tr("exchanges.close_positions.no_connected"),
+            )
             return
 
         if not self._confirm_close_all_positions():
             return
 
         self._set_bulk_controls_enabled(False)
-        self.close_all_positions_btn.setText("Закрытие...")
+        self.close_all_positions_btn.setText(tr("action.closing"))
 
         worker = Worker(self.exchange_manager.close_all_positions)
         self.close_positions_worker = worker
@@ -544,9 +565,9 @@ class ExchangesTab(QWidget):
         closed_positions = int(summary.get("closed_positions", 0) or 0)
 
         lines = [
-            f"Закрыто позиций: {closed_positions}",
-            f"Успешно по биржам: {len(ok)}",
-            f"С ошибками: {len(failed) + len(unsupported)}",
+            tr("exchanges.close_positions.summary.closed", count=closed_positions),
+            tr("exchanges.close_positions.summary.ok", count=len(ok)),
+            tr("exchanges.close_positions.summary.failed", count=len(failed) + len(unsupported)),
         ]
 
         all_errors = {}
@@ -555,50 +576,63 @@ class ExchangesTab(QWidget):
         if all_errors:
             details = "\n".join(f"- {name}: {msg}" for name, msg in sorted(all_errors.items()))
             lines.append("")
-            lines.append("Ошибки:")
+            lines.append(tr("exchanges.close_positions.summary.errors"))
             lines.append(details)
 
         msg = "\n".join(lines)
         if all_errors:
-            self._show_wide_report_dialog("Закрытие позиций", msg, warning=True)
+            self._show_wide_report_dialog(tr("exchanges.close_positions.title"), msg, warning=True)
         else:
-            self._show_wide_report_dialog("Закрытие позиций", msg, warning=False)
+            self._show_wide_report_dialog(tr("exchanges.close_positions.title"), msg, warning=False)
 
     def _on_close_all_positions_error(self, error_text):
-        self._show_warning_dialog("Закрытие позиций", f"Ошибка закрытия позиций: {error_text}")
+        self._show_warning_dialog(
+            tr("exchanges.close_positions.title"),
+            tr("exchanges.close_positions.error", error=error_text),
+        )
 
     def _on_close_all_positions_finished(self):
         self.close_positions_worker = None
         self._set_bulk_controls_enabled(True)
-        self.close_all_positions_btn.setText("⚠ Закрыть все позиции")
+        self.close_all_positions_btn.setText(f"⚠ {tr('action.close_all_positions')}")
 
     def _on_panel_close_positions(self, name):
         if self.close_positions_worker is not None:
-            self._show_warning_dialog("Закрытие позиций", "Сначала завершите закрытие позиций по всем биржам.")
+            self._show_warning_dialog(
+                tr("exchanges.close_positions.title"),
+                tr("exchanges.close_positions.wait_single"),
+            )
             return
         if self.single_close_worker is not None:
-            self._show_warning_dialog("Закрытие позиций", "Уже выполняется закрытие позиций по другой бирже.")
+            self._show_warning_dialog(
+                tr("exchanges.close_positions.title"),
+                tr("exchanges.close_positions.busy_single"),
+            )
             return
 
         exchange = self.exchange_manager.get_exchange(name)
         if exchange is None or not exchange.is_connected:
-            self._show_warning_dialog("Закрытие позиций", "Биржа не подключена.")
+            self._show_warning_dialog(
+                tr("exchanges.close_positions.title"),
+                tr("exchanges.close_positions.exchange_not_connected"),
+            )
             return
 
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Подтверждение")
-        box.setText(f"Закрыть все открытые позиции на бирже {name}?")
-        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        box.setDefaultButton(QMessageBox.StandardButton.No)
-        yes_btn = box.button(QMessageBox.StandardButton.Yes)
-        no_btn = box.button(QMessageBox.StandardButton.No)
-        if yes_btn is not None:
-            yes_btn.setText("Да")
-        if no_btn is not None:
-            no_btn.setText("Отмена")
-        if box.exec() != int(QMessageBox.StandardButton.Yes):
-            return
+        if not self.fast_trade_mode:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setWindowTitle(tr("exchanges.confirm_title"))
+            box.setText(tr("exchanges.close_positions.confirm_single", name=name))
+            box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            box.setDefaultButton(QMessageBox.StandardButton.No)
+            yes_btn = box.button(QMessageBox.StandardButton.Yes)
+            no_btn = box.button(QMessageBox.StandardButton.No)
+            if yes_btn is not None:
+                yes_btn.setText(tr("action.yes"))
+            if no_btn is not None:
+                no_btn.setText(tr("action.no"))
+            if box.exec() != int(QMessageBox.StandardButton.Yes):
+                return
 
         self.single_close_name = name
         self._set_panel_close_enabled(name, False)
@@ -613,10 +647,16 @@ class ExchangesTab(QWidget):
         result = result or {}
         name = result.get("name", self.single_close_name or "")
         closed_positions = int(result.get("closed_positions", 0) or 0)
-        self._show_info_dialog("Закрытие позиций", f"Биржа {name}: закрыто позиций {closed_positions}.")
+        self._show_info_dialog(
+            tr("exchanges.close_positions.title"),
+            tr("exchanges.close_positions.single_result", name=name, count=closed_positions),
+        )
 
     def _on_single_close_error(self, error_text):
-        self._show_warning_dialog("Закрытие позиций", f"Ошибка закрытия позиций: {error_text}")
+        self._show_warning_dialog(
+            tr("exchanges.close_positions.title"),
+            tr("exchanges.close_positions.error", error=error_text),
+        )
 
     def _on_single_close_finished(self):
         if self.single_close_name:

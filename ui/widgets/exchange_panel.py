@@ -71,8 +71,8 @@ class ExchangePanel(QFrame):
                 border: 1px solid {theme_color('border')};
                 border-radius: 4px;
                 background-color: {theme_color('surface')};
-                margin: 1px;
-                padding: 5px;
+                margin: 0px;
+                padding: 3px;
             }}
         """
         )
@@ -170,9 +170,12 @@ class ExchangePanel(QFrame):
 
     def _init_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(5)
         self.icon_label = QLabel()
         self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=30))
         self.icon_label.setFixedSize(30, 30)
@@ -215,6 +218,7 @@ class ExchangePanel(QFrame):
         self.balance_label = QLabel(tr("label.balance_empty"))
         self.balance_label.setStyleSheet(self._metric_style("success", bold=True))
         self.positions_label = QLabel(tr("label.positions_empty"))
+        self.positions_label.setTextFormat(Qt.TextFormat.RichText)
         self.positions_label.setStyleSheet(self._metric_style("warning"))
         self.pnl_label = QLabel(tr("label.pnl", value="0.00"))
         self.pnl_label.setStyleSheet(self._metric_style("text_muted", bold=True))
@@ -267,6 +271,7 @@ class ExchangePanel(QFrame):
         layout.addWidget(self.api_group)
 
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(4)
 
         self.connect_btn = QPushButton(tr("action.connect"))
@@ -279,7 +284,7 @@ class ExchangePanel(QFrame):
         self.disconnect_btn.setStyleSheet(button_style("danger", padding="4px 9px"))
         self.disconnect_btn.clicked.connect(lambda: self.disconnect_clicked.emit(self.exchange_name))
 
-        self.close_positions_btn = QPushButton("\u26A0 \u0417\u0430\u043a\u0440\u044b\u0442\u044c \u043f\u043e\u0437\u0438\u0446\u0438\u0438")
+        self.close_positions_btn = QPushButton(f"⚠ {tr('action.close_positions')}")
         self.close_positions_btn.setMinimumWidth(130)
         self.close_positions_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
         self.close_positions_btn.clicked.connect(lambda: self.close_positions_clicked.emit(self.exchange_name))
@@ -326,7 +331,7 @@ class ExchangePanel(QFrame):
         self.connect_btn.setText(tr("action.connect"))
         self.testnet_check.setText(tr("panel.testnet"))
         self.disconnect_btn.setText(tr("action.disconnect"))
-        self.close_positions_btn.setText("\u26A0 \u0417\u0430\u043a\u0440\u044b\u0442\u044c \u043f\u043e\u0437\u0438\u0446\u0438\u0438")
+        self.close_positions_btn.setText(f"⚠ {tr('action.close_positions')}")
         self.edit_btn.setText(tr("action.edit"))
         self.remove_btn.setText(tr("action.remove"))
         self.cancel_btn.setText(tr("action.cancel"))
@@ -346,7 +351,8 @@ class ExchangePanel(QFrame):
 
     def _update_ui_state(self):
         if self.is_connected:
-            self._set_status_view(tr("status.connected"), "success", "success")
+            mode = tr("mode.demo") if self.testnet else tr("mode.real")
+            self._set_status_view(tr("status.connected_mode", mode=mode), "success", "success")
             self.connect_btn.setVisible(False)
             self.disconnect_btn.setVisible(True)
             self.close_positions_btn.setVisible(True)
@@ -404,6 +410,41 @@ class ExchangePanel(QFrame):
 
         self.pnl_label.setText(text)
         self.pnl_label.setStyleSheet(self._metric_style(color_key, bold=True))
+
+    def _set_positions_display(self, total_count, long_count=0, short_count=0):
+        total_count = int(total_count or 0)
+        long_count = max(0, int(long_count or 0))
+        short_count = max(0, int(short_count or 0))
+
+        if total_count <= 0:
+            self.positions_label.setText(tr("label.positions", value="0"))
+            self.positions_label.setStyleSheet(self._metric_style("warning"))
+            return
+
+        if long_count <= 0 and short_count <= 0:
+            self.positions_label.setText(tr("label.positions", value=str(total_count)))
+            self.positions_label.setStyleSheet(self._metric_style("warning"))
+            return
+
+        parts = []
+        if long_count > 0:
+            parts.append(
+                f"<span style='color:{theme_color('success')}; font-weight:700;'>"
+                f"{tr('label.long')} {long_count}</span>"
+            )
+        if long_count > 0 and short_count > 0:
+            parts.append(
+                f"<span style='color:{theme_color('text_muted')}; font-weight:700;'>"
+                f" &nbsp;|&nbsp; </span>"
+            )
+        if short_count > 0:
+            parts.append(
+                f"<span style='color:{theme_color('danger')}; font-weight:700;'>"
+                f"{tr('label.short')} {short_count}</span>"
+            )
+
+        self.positions_label.setText(tr("label.positions", value="".join(parts)))
+        self.positions_label.setStyleSheet(self._metric_style("text_primary", bold=True))
 
     def _on_cancel(self):
         if self.is_new:
@@ -475,6 +516,8 @@ class ExchangePanel(QFrame):
             "testnet": bool(status.get("testnet", False)),
             "balance": float(status.get("balance", 0) or 0),
             "positions_count": int(status.get("positions_count", 0) or 0),
+            "long_positions": int(status.get("long_positions", 0) or 0),
+            "short_positions": int(status.get("short_positions", 0) or 0),
             "pnl": float(status.get("pnl", 0) or 0),
             "status_text": str(status.get("status_text", "") or ""),
         }
@@ -484,16 +527,32 @@ class ExchangePanel(QFrame):
 
         prev_connected = self.is_connected
         self.is_connected = snapshot["connected"]
+        self.testnet = snapshot["testnet"]
         if self.is_connected:
             self.edit_mode = False
         elif prev_connected:
             self.edit_mode = False
 
         if self.is_connected:
-            mode = tr("mode.demo") if snapshot["testnet"] else tr("mode.real")
-            self._set_status_view(tr("status.connected_mode", mode=mode), "success", "success")
+            status_text = snapshot["status_text"].strip()
+            lower_text = status_text.lower()
+            if (
+                "\u043e\u0448\u0438\u0431\u043a\u0430" in lower_text
+                or "error" in lower_text
+                or "\u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c" in lower_text
+                or "timeout" in lower_text
+                or "timed out" in lower_text
+            ):
+                self._set_status_view(status_text, "danger", "danger")
+            else:
+                mode = tr("mode.demo") if snapshot["testnet"] else tr("mode.real")
+                self._set_status_view(tr("status.connected_mode", mode=mode), "success", "success")
             self.balance_label.setText(tr("label.balance", value=f"{snapshot['balance']:,.2f}"))
-            self.positions_label.setText(tr("label.positions", value=snapshot["positions_count"]))
+            self._set_positions_display(
+                snapshot["positions_count"],
+                snapshot["long_positions"],
+                snapshot["short_positions"],
+            )
             self._set_pnl_display(snapshot["pnl"], snapshot["positions_count"])
         else:
             status_text = snapshot["status_text"].strip() or tr("status.disconnected")

@@ -96,7 +96,7 @@ class StartupSplash(QWidget):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_label)
 
-        self.subtitle_label = QLabel("Загрузка...")
+        self.subtitle_label = QLabel(tr("status.loading"))
         self.subtitle_label.setObjectName("SplashSubtitle")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.subtitle_label)

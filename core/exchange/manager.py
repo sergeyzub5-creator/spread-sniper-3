@@ -1,3 +1,6 @@
+import socket
+import time
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from core.exchange.catalog import normalize_exchange_code
@@ -26,6 +29,8 @@ class ExchangeManager(QObject):
         self._refresh_workers = {}
         self._refresh_unsupported = set()
         self._disconnect_on_connect = set()
+        self._net_check_ts = 0.0
+        self._net_check_result = None
 
         self._load_saved_exchanges()
         self._emit_status_updated(force=True)
@@ -98,7 +103,7 @@ class ExchangeManager(QObject):
         self._emit_status_updated()
 
     def _on_connect_worker_error(self, name, error_text):
-        logger.error("Ошибка фонового подключения %s: %s", name, error_text)
+        logger.error("РћС€РёР±РєР° С„РѕРЅРѕРІРѕРіРѕ РїРѕРґРєР»СЋС‡РµРЅРёСЏ %s: %s", name, error_text)
         exchange = self.exchanges.get(name)
         if exchange and not exchange.last_error:
             exchange.last_error = str(error_text)
@@ -114,6 +119,53 @@ class ExchangeManager(QObject):
 
     def _on_refresh_worker_finished(self, name):
         self._refresh_workers.pop(name, None)
+
+    @staticmethod
+    def _count_position_directions(positions):
+        long_count = 0
+        short_count = 0
+
+        for pos in positions or []:
+            size = pos.get("size", 0)
+            try:
+                size_value = float(size or 0)
+            except (TypeError, ValueError):
+                size_value = 0.0
+
+            if size_value > 0:
+                long_count += 1
+                continue
+            if size_value < 0:
+                short_count += 1
+                continue
+
+            side = str(
+                pos.get("side")
+                or pos.get("position_side")
+                or pos.get("positionSide")
+                or pos.get("holdSide")
+                or pos.get("posSide")
+                or ""
+            ).strip().lower()
+
+            if side in {"long", "buy"}:
+                long_count += 1
+            elif side in {"short", "sell"}:
+                short_count += 1
+
+        return long_count, short_count
+
+    def _is_online_cached(self, ttl_sec=2.0):
+        now = time.monotonic()
+        if self._net_check_result is not None and (now - self._net_check_ts) < float(ttl_sec):
+            return bool(self._net_check_result)
+        try:
+            with socket.create_connection(("8.8.8.8", 53), timeout=0.8):
+                self._net_check_result = True
+        except OSError:
+            self._net_check_result = False
+        self._net_check_ts = now
+        return bool(self._net_check_result)
 
     def _refresh_exchange_task(self, name):
         exchange = self.exchanges.get(name)
@@ -145,9 +197,13 @@ class ExchangeManager(QObject):
             return
 
         if status == "error":
-            message = str(result.get("error") or "?????? ?????????? ?????????")
+            raw_message = str(result.get("error") or "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹Рµ Р°РєРєР°СѓРЅС‚Р°")
+            if not self._is_online_cached():
+                message = "РќРµС‚ РёРЅС‚РµСЂРЅРµС‚Р°"
+            else:
+                message = raw_message
             exchange.last_error = message
-            logger.error("%s: ?????? refresh_state: %s", name, message)
+            logger.error("%s: РѕС€РёР±РєР° refresh_state: %s", name, raw_message)
             self._emit_status_updated(force=True)
 
     def _start_connect_worker(self, name):
@@ -207,7 +263,7 @@ class ExchangeManager(QObject):
     def add_exchange(self, exchange):
         name = exchange.name
         if name in self.exchanges:
-            logger.warning("Биржа %s уже существует", name)
+            logger.warning("Р‘РёСЂР¶Р° %s СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚", name)
             return False
 
         exchange.auto_connect = True
@@ -342,13 +398,17 @@ class ExchangeManager(QObject):
             status_text = ex.get_status_text()
             if loading and not ex.is_connected:
                 status_text = "Загрузка..."
+            positions = list(ex.positions or [])
+            long_count, short_count = self._count_position_directions(positions)
 
             statuses[name] = {
                 "connected": ex.is_connected,
                 "loading": loading,
                 "testnet": ex.testnet,
                 "balance": ex.balance,
-                "positions_count": len(ex.positions),
+                "positions_count": len(positions),
+                "long_positions": long_count,
+                "short_positions": short_count,
                 "pnl": ex.pnl,
                 "status_text": status_text,
             }
@@ -389,14 +449,14 @@ class ExchangeManager(QObject):
                 summary["closed_positions"] += int(closed_count or 0)
                 exchange.last_error = ""
             except NotImplementedError as exc:
-                message = str(exc) or "Закрытие позиций не реализовано"
+                message = str(exc) or "Р—Р°РєСЂС‹С‚РёРµ РїРѕР·РёС†РёР№ РЅРµ СЂРµР°Р»РёР·РѕРІР°РЅРѕ"
                 summary["unsupported"][name] = message
                 exchange.last_error = message
             except Exception as exc:
-                message = str(exc) or "Ошибка закрытия позиций"
+                message = str(exc) or "РћС€РёР±РєР° Р·Р°РєСЂС‹С‚РёСЏ РїРѕР·РёС†РёР№"
                 summary["failed"][name] = message
                 exchange.last_error = message
-                logger.error("%s: ошибка закрытия всех позиций: %s", name, message)
+                logger.error("%s: РѕС€РёР±РєР° Р·Р°РєСЂС‹С‚РёСЏ РІСЃРµС… РїРѕР·РёС†РёР№: %s", name, message)
 
         self._emit_status_updated(force=True)
         return summary
@@ -404,11 +464,13 @@ class ExchangeManager(QObject):
     def close_positions_for_exchange(self, name):
         exchange = self.exchanges.get(name)
         if exchange is None:
-            raise RuntimeError(f"Биржа {name} не найдена")
+            raise RuntimeError(f"Р‘РёСЂР¶Р° {name} РЅРµ РЅР°Р№РґРµРЅР°")
         if not exchange.is_connected:
-            raise RuntimeError(f"Биржа {name} не подключена")
+            raise RuntimeError(f"Р‘РёСЂР¶Р° {name} РЅРµ РїРѕРґРєР»СЋС‡РµРЅР°")
 
         closed_count = exchange.close_all_positions()
         exchange.last_error = ""
         self._emit_status_updated(force=True)
         return {"name": name, "closed_positions": int(closed_count or 0)}
+
+

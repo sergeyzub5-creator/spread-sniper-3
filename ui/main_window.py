@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
@@ -33,6 +34,7 @@ class MainWindow(QMainWindow):
         self.language_manager = get_language_manager()
         self.theme_manager = get_theme_manager()
         self.settings_manager = SettingsManager()
+        self.fast_trade_mode = False
         self._button_spam_guard = ButtonSpamGuard(cooldown_ms=220, parent=self)
         app = QApplication.instance()
         if app is not None:
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tabs)
 
         self.exchanges_tab = ExchangesTab(self.exchange_manager)
+        self.exchanges_tab.set_fast_trade_mode(self.fast_trade_mode)
         self.exchanges_tab.exchange_added.connect(self._on_exchange_added)
         self.exchanges_tab.exchange_removed.connect(self.exchange_manager.remove_exchange)
         self.tabs.addTab(self.exchanges_tab, tr("tab.exchanges"))
@@ -136,6 +139,7 @@ class MainWindow(QMainWindow):
         saved_theme = self.settings_manager.load_ui_theme()
         self.language_manager.set_language(saved_language)
         self.theme_manager.set_theme(saved_theme)
+        self.fast_trade_mode = self.settings_manager.load_fast_trade_mode()
 
     def _build_language_menu(self):
         self.language_menu.clear()
@@ -148,6 +152,12 @@ class MainWindow(QMainWindow):
 
     def _build_settings_menu(self):
         self.settings_menu.clear()
+        self.fast_trade_action = self.settings_menu.addAction(tr("settings.fast_trade_mode"))
+        self.fast_trade_action.setCheckable(True)
+        self.fast_trade_action.setChecked(self.fast_trade_mode)
+        self.fast_trade_action.triggered.connect(self._on_fast_trade_toggled)
+
+        self.settings_menu.addSeparator()
         self.themes_submenu = self.settings_menu.addMenu(tr("settings.themes_item"))
         current_theme = self.theme_manager.theme_name
         for code in self.theme_manager.available_themes():
@@ -155,6 +165,38 @@ class MainWindow(QMainWindow):
             action.setCheckable(True)
             action.setChecked(code == current_theme)
             action.triggered.connect(lambda _checked=False, theme_code=code: self._set_theme(theme_code))
+
+    def _confirm_enable_fast_trade_mode(self):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(tr("settings.fast_trade_confirm_title"))
+        box.setText(tr("settings.fast_trade_confirm_text"))
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        yes_btn = box.button(QMessageBox.StandardButton.Yes)
+        no_btn = box.button(QMessageBox.StandardButton.No)
+        if yes_btn is not None:
+            yes_btn.setText(tr("action.yes"))
+        if no_btn is not None:
+            no_btn.setText(tr("action.no"))
+        return box.exec() == int(QMessageBox.StandardButton.Yes)
+
+    def _set_fast_trade_mode(self, enabled):
+        self.fast_trade_mode = bool(enabled)
+        self.settings_manager.save_fast_trade_mode(self.fast_trade_mode)
+        if hasattr(self, "exchanges_tab"):
+            self.exchanges_tab.set_fast_trade_mode(self.fast_trade_mode)
+
+    def _on_fast_trade_toggled(self, checked):
+        checked = bool(checked)
+        if checked and not self.fast_trade_mode:
+            if not self._confirm_enable_fast_trade_mode():
+                if hasattr(self, "fast_trade_action"):
+                    self.fast_trade_action.blockSignals(True)
+                    self.fast_trade_action.setChecked(False)
+                    self.fast_trade_action.blockSignals(False)
+                return
+        self._set_fast_trade_mode(checked)
 
     def _set_language(self, language_code):
         self.language_manager.set_language(language_code)

@@ -59,16 +59,31 @@ class NetworkStatusBar(QFrame):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(8)
 
+        self.network_capsule = QFrame()
+        self.network_capsule.setObjectName("networkCapsule")
+        self.network_capsule.setMinimumWidth(184)
+        self.network_capsule.setFixedHeight(34)
+
+        network_layout = QHBoxLayout(self.network_capsule)
+        network_layout.setContentsMargins(10, 1, 10, 1)
+        network_layout.setSpacing(7)
+
         self.net_indicator = WifiIndicator()
-        layout.addWidget(self.net_indicator)
+        network_layout.addWidget(self.net_indicator)
 
         self.wifi_label = QLabel("")
-        layout.addWidget(self.wifi_label)
+        self.wifi_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        network_layout.addWidget(self.wifi_label)
+        network_layout.addStretch()
+
+        layout.addWidget(self.network_capsule)
 
         layout.addStretch()
 
         self.time_label = QLabel()
-        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setMinimumWidth(148)
+        self.time_label.setFixedHeight(34)
         layout.addWidget(self.time_label)
 
         self.error_label = QLabel()
@@ -127,7 +142,9 @@ class NetworkStatusBar(QFrame):
                 theme_color("net_idle_border"),
             )
             self.wifi_label.setText(tr("status.net_checking"))
-            self.wifi_label.setStyleSheet(f"color: {theme_color('text_muted')};")
+            self.wifi_label.setStyleSheet(
+                f"color: {theme_color('text_muted')}; font-size: 15px; font-weight: 700;"
+            )
             return
 
         if self._online:
@@ -136,14 +153,18 @@ class NetworkStatusBar(QFrame):
                 theme_color("net_online_border"),
             )
             self.wifi_label.setText(tr("status.net_online"))
-            self.wifi_label.setStyleSheet(f"color: {theme_color('success')};")
+            self.wifi_label.setStyleSheet(
+                f"color: {theme_color('success')}; font-size: 15px; font-weight: 700;"
+            )
         else:
             self.net_indicator.set_colors(
                 theme_color("net_offline"),
                 theme_color("net_offline_border"),
             )
             self.wifi_label.setText(tr("status.net_offline"))
-            self.wifi_label.setStyleSheet(f"color: {theme_color('danger')};")
+            self.wifi_label.setStyleSheet(
+                f"color: {theme_color('danger')}; font-size: 15px; font-weight: 700;"
+            )
 
     def apply_theme(self):
         self.setStyleSheet(
@@ -158,6 +179,42 @@ class NetworkStatusBar(QFrame):
                 font-size: 13px;
             }}
         """
+        )
+        self.time_label.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {theme_color('text_primary')};
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {theme_color('surface')},
+                    stop: 1 {theme_color('surface_alt')}
+                );
+                border: 1px solid {theme_color('border')};
+                border-radius: 10px;
+                font-size: 20px;
+                font-weight: 800;
+                font-family: "Segoe UI", "Consolas", monospace;
+                letter-spacing: 1px;
+                padding: 1px 12px;
+            }}
+            """
+        )
+        self.network_capsule.setStyleSheet(
+            f"""
+            QFrame#networkCapsule {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {theme_color('surface')},
+                    stop: 1 {theme_color('surface_alt')}
+                );
+                border: 1px solid {theme_color('border')};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                font-size: 15px;
+                font-weight: 700;
+            }}
+            """
         )
         self.error_label.setStyleSheet(f"color: {theme_color('danger')};")
         self._apply_network_state()

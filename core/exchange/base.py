@@ -104,11 +104,11 @@ class BaseExchange(QObject):
         ThreadManager().start(worker)
 
     def get_status_text(self):
+        if self.last_error:
+            return f"\u041e\u0448\u0438\u0431\u043a\u0430: {self.last_error}"
         if self.is_connected:
             mode = tr("mode.demo") if self.testnet else tr("mode.real")
             balance = tr("label.balance", value=f"{self.balance:.2f}")
             positions = tr("label.positions", value=len(self.positions))
             return f"{mode} | {balance} | {positions}"
-        if self.last_error:
-            return f"\u041e\u0448\u0438\u0431\u043a\u0430: {self.last_error}"
         return tr("status.disconnected")

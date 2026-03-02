@@ -6,6 +6,7 @@ class SettingsManager:
 
     UI_LANGUAGE_KEY = "ui/language"
     UI_THEME_KEY = "ui/theme"
+    FAST_TRADE_MODE_KEY = "trading/fast_mode"
 
     def __new__(cls):
         if cls._instance is None:
@@ -52,3 +53,11 @@ class SettingsManager:
     def load_ui_theme(self):
         return str(self.get_value(self.UI_THEME_KEY, "dark") or "dark")
 
+    def save_fast_trade_mode(self, enabled):
+        self.set_value(self.FAST_TRADE_MODE_KEY, bool(enabled))
+
+    def load_fast_trade_mode(self):
+        value = self.get_value(self.FAST_TRADE_MODE_KEY, False)
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
