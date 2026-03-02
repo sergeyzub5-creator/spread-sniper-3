@@ -56,6 +56,11 @@ class BaseExchange(QObject):
     def unsubscribe_price(self, symbol):
         raise NotImplementedError
 
+    def open_min_test_position(self, symbol, direction):
+        raise NotImplementedError(
+            "Временное тестовое открытие позиции для этой биржи не реализовано"
+        )
+
     def get_trading_pairs(self, limit=400):
         pairs = []
         seen = set()

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import math
 import time
 from urllib.parse import urlencode
 
@@ -207,6 +208,182 @@ class BinanceExchange(BaseExchange):
             limit_value = max(1, int(limit or 1))
             return pairs[:limit_value]
         return super().get_trading_pairs(limit=limit)
+
+    @staticmethod
+    def _round_up_to_step(value, step):
+        if step <= 0:
+            return value
+        units = value / step
+        rounded = math.ceil(units - 1e-12) * step
+        return rounded
+
+    @staticmethod
+    def _qty_to_str(value):
+        text = f"{float(value):.16f}".rstrip("0").rstrip(".")
+        return text if text else "0"
+
+    def _extract_filter_value(self, filters, filter_type, field):
+        for f in filters or []:
+            if str(f.get("filterType", "")).upper() == str(filter_type).upper():
+                return f.get(field)
+        return None
+
+    def _is_dual_side_mode(self):
+        payload = self._request("GET", "/fapi/v1/positionSide/dual", signed=True)
+        if not isinstance(payload, dict):
+            return False
+        raw = payload.get("dualSidePosition")
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.strip().lower() == "true"
+        return bool(raw)
+
+    def open_min_test_position(self, symbol, direction):
+        # TEMP: spread-tab market-entry check for order-book validation.
+        if not self.is_connected:
+            raise RuntimeError("Binance: биржа не подключена")
+
+        side = str(direction or "").strip().lower()
+        if side not in {"buy", "sell"}:
+            raise RuntimeError("Binance: неверное направление ордера")
+
+        normalized_symbol = self._normalize_symbol(symbol)
+        if not normalized_symbol:
+            raise RuntimeError("Binance: не указана торговая пара")
+
+        exchange_info = self._request("GET", "/fapi/v1/exchangeInfo", signed=False)
+        if not isinstance(exchange_info, dict):
+            raise RuntimeError("Binance: не удалось получить параметры инструмента")
+
+        symbol_info = None
+        for row in exchange_info.get("symbols") or []:
+            row_symbol = self._normalize_symbol(row.get("symbol"))
+            if row_symbol == normalized_symbol:
+                symbol_info = row
+                break
+        if symbol_info is None:
+            raise RuntimeError(f"Binance: инструмент {normalized_symbol} не найден")
+
+        status = str(symbol_info.get("status", "")).upper()
+        if status and status != "TRADING":
+            raise RuntimeError(f"Binance: инструмент {normalized_symbol} недоступен для торговли")
+
+        filters = symbol_info.get("filters") or []
+        lot_min = self._to_float(
+            self._extract_filter_value(filters, "MARKET_LOT_SIZE", "minQty"),
+            default=0.0,
+        )
+        lot_step = self._to_float(
+            self._extract_filter_value(filters, "MARKET_LOT_SIZE", "stepSize"),
+            default=0.0,
+        )
+        if lot_min <= 0:
+            lot_min = self._to_float(
+                self._extract_filter_value(filters, "LOT_SIZE", "minQty"),
+                default=0.0,
+            )
+        if lot_step <= 0:
+            lot_step = self._to_float(
+                self._extract_filter_value(filters, "LOT_SIZE", "stepSize"),
+                default=0.0,
+            )
+        lot_max = self._to_float(
+            self._extract_filter_value(filters, "MARKET_LOT_SIZE", "maxQty"),
+            default=0.0,
+        )
+        if lot_max <= 0:
+            lot_max = self._to_float(
+                self._extract_filter_value(filters, "LOT_SIZE", "maxQty"),
+                default=0.0,
+            )
+
+        min_notional = self._to_float(
+            self._extract_filter_value(filters, "MIN_NOTIONAL", "notional"),
+            default=0.0,
+        )
+
+        qty = lot_min if lot_min > 0 else lot_step
+        if qty <= 0:
+            raise RuntimeError(f"Binance: не удалось определить минимальный объем для {normalized_symbol}")
+
+        ticker = self._request(
+            "GET",
+            "/fapi/v1/ticker/bookTicker",
+            signed=False,
+            params={"symbol": normalized_symbol},
+        )
+        price = None
+        if isinstance(ticker, dict):
+            price_field = "askPrice" if side == "buy" else "bidPrice"
+            price = self._to_float(ticker.get(price_field), default=0.0)
+            if price <= 0:
+                price = self._to_float(ticker.get("price"), default=0.0)
+
+        if min_notional > 0 and price and price > 0:
+            notional_qty = min_notional / price
+            qty = max(qty, notional_qty)
+
+        if lot_step > 0:
+            qty = self._round_up_to_step(qty, lot_step)
+        if lot_max > 0 and qty > lot_max:
+            raise RuntimeError("Binance: минимальный тестовый объем превышает допустимый максимум")
+
+        qty_str = self._qty_to_str(qty)
+        params = {
+            "symbol": normalized_symbol,
+            "side": "BUY" if side == "buy" else "SELL",
+            "type": "MARKET",
+            "quantity": qty_str,
+            "newOrderRespType": "RESULT",
+        }
+
+        if self._is_dual_side_mode():
+            params["positionSide"] = "LONG" if side == "buy" else "SHORT"
+
+        response = self._request("POST", "/fapi/v1/order", signed=True, params=params)
+        if response is None:
+            raise RuntimeError("Binance: не удалось открыть тестовую позицию")
+
+        order_id = response.get("orderId")
+        order_status = str(response.get("status") or "").upper()
+        executed_qty = self._to_float(response.get("executedQty"), default=0.0)
+        avg_price = self._to_float(response.get("avgPrice"), default=0.0)
+
+        # Fast confirm for UI: short polling to catch FILLED right after submit.
+        if order_id is not None and order_status != "FILLED":
+            for _ in range(5):
+                time.sleep(0.12)
+                order_state = self._request(
+                    "GET",
+                    "/fapi/v1/order",
+                    signed=True,
+                    params={"symbol": normalized_symbol, "orderId": order_id},
+                )
+                if not isinstance(order_state, dict):
+                    continue
+
+                status_candidate = str(order_state.get("status") or "").upper()
+                if status_candidate:
+                    order_status = status_candidate
+                executed_qty = self._to_float(order_state.get("executedQty"), default=executed_qty)
+                avg_price = self._to_float(order_state.get("avgPrice"), default=avg_price)
+                if order_status == "FILLED":
+                    break
+
+        executed_qty_str = qty_str
+        if executed_qty and executed_qty > 0:
+            executed_qty_str = self._qty_to_str(executed_qty)
+
+        return {
+            "symbol": normalized_symbol,
+            "side": side,
+            "quantity": qty_str,
+            "executed_qty": executed_qty_str,
+            "status": order_status or "UNKNOWN",
+            "avg_price": avg_price,
+            "order_id": order_id,
+        }
 
     def close_all_positions(self):
         if not self.is_connected:

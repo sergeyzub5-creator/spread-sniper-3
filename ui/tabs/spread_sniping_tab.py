@@ -329,6 +329,14 @@ class SpreadSnipingTab(QWidget):
             1: {"state": "empty", "bid": None, "ask": None},
             2: {"state": "empty", "bid": None, "ask": None},
         }
+        self._trade_frames = {}
+        self._trade_note_labels = {}
+        self._trade_status_labels = {}
+        self._trade_buy_buttons = {}
+        self._trade_sell_buttons = {}
+        self._trade_status_state = {1: None, 2: None}
+        self._trade_workers = {}
+        self._trade_busy = set()
         self._quote_streams = {
             1: BinanceBookTickerStream(self),
             2: BinanceBookTickerStream(self),
@@ -449,6 +457,33 @@ class SpreadSnipingTab(QWidget):
         quotes_row.addWidget(left_quote_half, 1)
         quotes_row.addWidget(right_quote_half, 1)
 
+        trades_row = QHBoxLayout()
+        trades_row.setContentsMargins(0, 0, 0, 0)
+        trades_row.setSpacing(0)
+
+        left_trade_half = QWidget()
+        left_trade_layout = QHBoxLayout(left_trade_half)
+        left_trade_layout.setContentsMargins(0, 0, 8, 0)
+        left_trade_layout.setSpacing(0)
+        left_trade_layout.addStretch()
+
+        self.exchange_1_trade = self._create_trade_widget(1)
+        left_trade_layout.addWidget(self.exchange_1_trade, 0)
+        left_trade_layout.addStretch()
+
+        right_trade_half = QWidget()
+        right_trade_layout = QHBoxLayout(right_trade_half)
+        right_trade_layout.setContentsMargins(8, 0, 0, 0)
+        right_trade_layout.setSpacing(0)
+        right_trade_layout.addStretch()
+
+        self.exchange_2_trade = self._create_trade_widget(2)
+        right_trade_layout.addWidget(self.exchange_2_trade, 0)
+        right_trade_layout.addStretch()
+
+        trades_row.addWidget(left_trade_half, 1)
+        trades_row.addWidget(right_trade_half, 1)
+
         self.info_label = QLabel()
         self.info_label.setObjectName("subtitle")
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -457,6 +492,7 @@ class SpreadSnipingTab(QWidget):
         card_layout.addLayout(selectors_row)
         card_layout.addLayout(pairs_row)
         card_layout.addLayout(quotes_row)
+        card_layout.addLayout(trades_row)
         card_layout.addWidget(self.info_label)
         card_layout.addStretch()
 
@@ -518,6 +554,53 @@ class SpreadSnipingTab(QWidget):
         self._quote_frames[index] = frame
         self._quote_bid_labels[index] = bid_label
         self._quote_ask_labels[index] = ask_label
+        return frame
+
+    def _create_trade_widget(self, index):
+        frame = QFrame()
+        frame.setObjectName("tradePanel")
+        frame.setFixedWidth(250)
+        frame.setVisible(False)
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+
+        note = QLabel()
+        note.setObjectName("tempTradeNote")
+        note.setWordWrap(True)
+        note.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        buy_btn = QPushButton()
+        buy_btn.setObjectName("tempBuyBtn")
+        buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        buy_btn.clicked.connect(lambda _checked=False, idx=index: self._on_temp_trade_clicked(idx, "buy"))
+
+        sell_btn = QPushButton()
+        sell_btn.setObjectName("tempSellBtn")
+        sell_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sell_btn.clicked.connect(lambda _checked=False, idx=index: self._on_temp_trade_clicked(idx, "sell"))
+
+        row.addWidget(buy_btn, 1)
+        row.addWidget(sell_btn, 1)
+
+        status = QLabel()
+        status.setObjectName("tradeStatus")
+        status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        layout.addWidget(note)
+        layout.addLayout(row)
+        layout.addWidget(status)
+
+        self._trade_frames[index] = frame
+        self._trade_note_labels[index] = note
+        self._trade_status_labels[index] = status
+        self._trade_buy_buttons[index] = buy_btn
+        self._trade_sell_buttons[index] = sell_btn
         return frame
 
     def apply_theme(self):
@@ -605,6 +688,21 @@ class SpreadSnipingTab(QWidget):
                 font-size: 11px;
                 font-weight: 700;
             }}
+            QFrame#tradePanel {{
+                background-color: {c_alt};
+                border: 1px solid {c_border};
+                border-radius: 10px;
+            }}
+            QLabel#tempTradeNote {{
+                color: {theme_color('warning')};
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            QLabel#tradeStatus {{
+                color: {c_muted};
+                font-size: 10px;
+                font-weight: 600;
+            }}
         """
         )
 
@@ -632,12 +730,22 @@ class SpreadSnipingTab(QWidget):
             popup.setObjectName("pairPopup")
             popup.setStyleSheet(popup_style)
 
+        for index in (1, 2):
+            buy_btn = self._trade_buy_buttons.get(index)
+            sell_btn = self._trade_sell_buttons.get(index)
+            if buy_btn is not None:
+                buy_btn.setStyleSheet(button_style("success", padding="5px 10px", bold=True))
+            if sell_btn is not None:
+                sell_btn.setStyleSheet(button_style("danger", padding="5px 10px", bold=True))
+
     def retranslate_ui(self):
         self.title_label.setText(tr("spread.title"))
         self.info_label.setText(tr("spread.subtitle"))
         self._update_selector_texts()
         self._refresh_pair_controls()
         self._refresh_all_quote_labels()
+        self._refresh_trade_texts()
+        self._refresh_trade_controls()
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.MouseButtonPress:
@@ -659,6 +767,7 @@ class SpreadSnipingTab(QWidget):
         self._refresh_selector_state()
         self._sync_quote_stream(1)
         self._sync_quote_stream(2)
+        self._refresh_trade_controls()
 
     def _connected_names(self):
         return sorted(self.exchange_manager.get_connected_names(), key=lambda v: v.lower())
@@ -698,6 +807,7 @@ class SpreadSnipingTab(QWidget):
         self._update_selector_texts()
         self._refresh_pair_control(index)
         self._sync_quote_stream(index)
+        self._refresh_trade_control(index)
 
         if new_name:
             self._ensure_pairs_loaded(new_name)
@@ -716,6 +826,7 @@ class SpreadSnipingTab(QWidget):
         self._pair_reedit_mode.discard(index)
         self._update_pair_input_mode(index)
         self._sync_quote_stream(index)
+        self._refresh_trade_control(index)
 
     def _set_selected_pair(self, index, pair):
         value = self._normalize_pair(pair)
@@ -725,6 +836,7 @@ class SpreadSnipingTab(QWidget):
             self.selected_pair_2 = value
         self._update_pair_input_mode(index)
         self._sync_quote_stream(index)
+        self._refresh_trade_control(index)
 
     def _get_selected_pair(self, index):
         return self.selected_pair_1 if index == 1 else self.selected_pair_2
@@ -741,6 +853,7 @@ class SpreadSnipingTab(QWidget):
 
         self._update_selector_texts()
         self._refresh_pair_controls()
+        self._refresh_trade_controls()
 
     def _selector_text(self, index):
         if index == 1:
@@ -988,6 +1101,7 @@ class SpreadSnipingTab(QWidget):
         self._pair_loading.discard(exchange_name)
         self._pair_workers.pop(exchange_name, None)
         self._refresh_pair_controls()
+        self._refresh_trade_controls()
 
     def _pairs_for_index(self, index):
         exchange_name = self._get_selected_exchange(index)
@@ -1322,6 +1436,163 @@ class SpreadSnipingTab(QWidget):
             return
         if self._quote_values.get(index, {}).get("state") != "live":
             self._set_quote_state(index, "loading")
+
+    # ВРЕМЕННЫЙ ТЕСТОВЫЙ БЛОК: ручное открытие минимальной позиции для проверки стакана.
+    # Планово будет удален после завершения проверки механики bookTicker/стакана.
+    def _refresh_trade_texts(self):
+        for index in (1, 2):
+            note = self._trade_note_labels.get(index)
+            buy_btn = self._trade_buy_buttons.get(index)
+            sell_btn = self._trade_sell_buttons.get(index)
+            if note is not None:
+                note.setText(tr("spread.temp_trade_note"))
+            if buy_btn is not None:
+                buy_btn.setText(tr("spread.trade_buy"))
+            if sell_btn is not None:
+                sell_btn.setText(tr("spread.trade_sell"))
+
+            state = self._trade_status_state.get(index)
+            if state:
+                key, kwargs = state
+                self._apply_trade_status(index, key, **kwargs)
+
+    def _set_trade_status(self, index, key=None, **kwargs):
+        if key is None:
+            self._trade_status_state[index] = None
+            label = self._trade_status_labels.get(index)
+            if label is not None:
+                label.setText("")
+            return
+        self._trade_status_state[index] = (key, dict(kwargs))
+        self._apply_trade_status(index, key, **kwargs)
+
+    def _apply_trade_status(self, index, key, **kwargs):
+        label = self._trade_status_labels.get(index)
+        if label is None:
+            return
+        label.setText(tr(key, **kwargs))
+
+    def _refresh_trade_controls(self):
+        self._refresh_trade_control(1)
+        self._refresh_trade_control(2)
+
+    def _refresh_trade_control(self, index):
+        frame = self._trade_frames.get(index)
+        buy_btn = self._trade_buy_buttons.get(index)
+        sell_btn = self._trade_sell_buttons.get(index)
+        if frame is None or buy_btn is None or sell_btn is None:
+            return
+
+        exchange_name = self._get_selected_exchange(index)
+        pair = self._get_selected_pair(index)
+        exchange = self.exchange_manager.get_exchange(exchange_name) if exchange_name else None
+        exchange_type = normalize_exchange_code(getattr(exchange, "exchange_type", None)) if exchange else ""
+        can_show = bool(exchange_name and pair and exchange and exchange.is_connected and exchange_type == "binance")
+
+        frame.setVisible(can_show)
+        if not can_show:
+            self._set_trade_status(index, None)
+            return
+
+        busy = index in self._trade_busy
+        buy_btn.setEnabled(not busy)
+        sell_btn.setEnabled(not busy)
+
+        if busy:
+            self._set_trade_status(index, "spread.trade_opening")
+        elif self._trade_status_state.get(index) is None:
+            self._set_trade_status(index, "spread.trade_ready")
+
+    def _on_temp_trade_clicked(self, index, side):
+        if index in self._trade_busy:
+            return
+
+        exchange_name = self._get_selected_exchange(index)
+        pair = self._get_selected_pair(index)
+        if not exchange_name or not pair:
+            self._set_trade_status(index, "spread.trade_select_pair_first")
+            return
+
+        exchange = self.exchange_manager.get_exchange(exchange_name)
+        if exchange is None or not exchange.is_connected:
+            self._set_trade_status(index, "spread.trade_exchange_not_connected")
+            return
+
+        exchange_type = normalize_exchange_code(getattr(exchange, "exchange_type", None))
+        if exchange_type != "binance":
+            self._set_trade_status(index, "spread.trade_binance_only")
+            return
+
+        self._trade_busy.add(index)
+        self._refresh_trade_control(index)
+        self._set_trade_status(index, "spread.trade_opening")
+
+        worker = Worker(self._open_temp_trade_task, exchange_name, pair, side)
+        self._trade_workers[index] = worker
+        worker.signals.result.connect(
+            lambda result, idx=index, s=side: self._on_temp_trade_result(idx, s, result)
+        )
+        worker.signals.error.connect(lambda err, idx=index: self._on_temp_trade_error(idx, err))
+        worker.signals.finished.connect(lambda idx=index: self._on_temp_trade_finished(idx))
+        ThreadManager().start(worker)
+
+    def _open_temp_trade_task(self, exchange_name, pair, side):
+        exchange = self.exchange_manager.get_exchange(exchange_name)
+        if exchange is None:
+            raise RuntimeError(tr("spread.trade_exchange_not_connected"))
+
+        opener = getattr(exchange, "open_min_test_position", None)
+        if not callable(opener):
+            raise RuntimeError(tr("spread.trade_unsupported"))
+
+        return opener(pair, side)
+
+    def _on_temp_trade_result(self, index, side, result):
+        side_key = "spread.side.buy" if str(side).lower() == "buy" else "spread.side.sell"
+        side_title = tr(side_key)
+
+        symbol = self._get_selected_pair(index) or ""
+        quantity = "--"
+        status = ""
+        if isinstance(result, dict):
+            symbol = self._normalize_pair(result.get("symbol") or symbol)
+            quantity = str(
+                result.get("executed_qty")
+                or result.get("executedQty")
+                or result.get("quantity")
+                or result.get("qty")
+                or quantity
+            )
+            status = str(result.get("status") or "").strip().upper()
+
+        qty_view = quantity
+        if status:
+            qty_view = f"{quantity} | {status}"
+
+        self._set_trade_status(
+            index,
+            "spread.trade_opened",
+            side=side_title,
+            symbol=symbol,
+            qty=qty_view,
+        )
+
+        # Trigger immediate background account refresh so cards update right after fill.
+        exchange_name = self._get_selected_exchange(index)
+        exchange = self.exchange_manager.get_exchange(exchange_name) if exchange_name else None
+        if exchange is not None and exchange.is_connected:
+            try:
+                exchange.api_request_async(exchange.refresh_state)
+            except Exception:
+                pass
+
+    def _on_temp_trade_error(self, index, error_text):
+        self._set_trade_status(index, "spread.trade_failed", error=str(error_text or "").strip())
+
+    def _on_temp_trade_finished(self, index):
+        self._trade_workers.pop(index, None)
+        self._trade_busy.discard(index)
+        self._refresh_trade_control(index)
 
     def _hide_all_pair_popups(self):
         for completer in self._pair_completers.values():
