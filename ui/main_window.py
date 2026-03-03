@@ -20,6 +20,7 @@ from core.utils.logger import get_logger
 from ui.styles import get_theme_manager, theme_color
 from ui.styles.dark_theme import get_dark_theme_stylesheet
 from ui.tabs.exchanges_tab import ExchangesTab
+from ui.tabs.spread_design_lab_tab import SpreadDesignLabTab
 from ui.tabs.spread_sniping_tab import SpreadSnipingTab
 from ui.utils import ButtonSpamGuard
 from ui.widgets.brand_header import NeonLogoWidget
@@ -67,6 +68,9 @@ class MainWindow(QMainWindow):
 
         self.spread_sniping_tab = SpreadSnipingTab(self.exchange_manager)
         self.tabs.addTab(self.spread_sniping_tab, tr("tab.spread_sniping"))
+
+        self.spread_design_lab_tab = SpreadDesignLabTab()
+        self.tabs.addTab(self.spread_design_lab_tab, tr("tab.test"))
 
         self.status_bar = NetworkStatusBar()
         layout.addWidget(self.status_bar)
@@ -272,6 +276,8 @@ class MainWindow(QMainWindow):
             self.exchanges_tab.apply_theme()
         if hasattr(self, "spread_sniping_tab"):
             self.spread_sniping_tab.apply_theme()
+        if hasattr(self, "spread_design_lab_tab"):
+            self.spread_design_lab_tab.apply_theme()
         if hasattr(self, "status_bar"):
             self.status_bar.apply_theme()
 
@@ -280,6 +286,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "tabs"):
             self.tabs.setTabText(0, tr("tab.exchanges"))
             self.tabs.setTabText(1, tr("tab.spread_sniping"))
+            self.tabs.setTabText(2, tr("tab.test"))
 
         if hasattr(self, "language_btn"):
             self.language_btn.setToolTip(tr("settings.language_tooltip"))
@@ -293,6 +300,8 @@ class MainWindow(QMainWindow):
             self.exchanges_tab.retranslate_ui()
         if hasattr(self, "spread_sniping_tab"):
             self.spread_sniping_tab.retranslate_ui()
+        if hasattr(self, "spread_design_lab_tab"):
+            self.spread_design_lab_tab.retranslate_ui()
         if hasattr(self, "status_bar"):
             self.status_bar.retranslate_ui()
 

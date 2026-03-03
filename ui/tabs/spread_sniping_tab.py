@@ -60,12 +60,19 @@ class SpreadSnipingTab(
     QUOTE_PANEL_WIDTH = 540
     SPREAD_VALUE_HEIGHT = 84
     SPREAD_VALUE_WIDTH = 250
+    SUPPORTED_SPREAD_VARIANTS = (
+        "neon_frame",
+        "glass_slate",
+        "signal_split",
+        "minimal_pro",
+    )
 
     def __init__(self, exchange_manager, parent=None):
         super().__init__(parent)
         self.exchange_manager = exchange_manager
         self.settings_manager = SettingsManager()
         self._spread_armed = True
+        self._spread_visual_variant = "signal_split"
         self._runtime_service = SpreadRuntimeService(
             exchange_manager=self.exchange_manager,
             popular_pairs=self.POPULAR_PAIRS,
@@ -269,6 +276,8 @@ class SpreadSnipingTab(
         frame = QFrame()
         frame.setObjectName("spreadValueFrame")
         frame.setProperty("mode", "spread")
+        frame.setProperty("variant", self._spread_visual_variant)
+        frame.setProperty("edgeTone", "neutral")
         frame.setMinimumHeight(self.SPREAD_VALUE_HEIGHT)
         frame.setMinimumWidth(self.SPREAD_VALUE_WIDTH)
         frame.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
@@ -282,6 +291,7 @@ class SpreadSnipingTab(
         inner = QFrame()
         inner.setObjectName("spreadValueInner")
         inner.setProperty("mode", "spread")
+        inner.setProperty("variant", self._spread_visual_variant)
         self.spread_value_inner = inner
         outer_layout.addWidget(inner)
 
@@ -291,11 +301,13 @@ class SpreadSnipingTab(
 
         self.spread_select_btn = QPushButton()
         self.spread_select_btn.setObjectName("spreadActionButton")
+        self.spread_select_btn.setProperty("variant", self._spread_visual_variant)
         self.spread_select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.spread_select_btn.clicked.connect(self._on_spread_select_clicked)
 
         self.spread_value_label = QLabel()
         self.spread_value_label.setObjectName("spreadValueLabel")
+        self.spread_value_label.setProperty("variant", self._spread_visual_variant)
         self.spread_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stack.addWidget(self.spread_select_btn)
         stack.addWidget(self.spread_value_label)
@@ -491,56 +503,148 @@ class SpreadSnipingTab(
                 max-height: 18px;
             }}
             QFrame#spreadCenterColumn {{
-                background-color: {self._rgba(c_alt, 0.50)};
-                border: 1px solid {self._rgba(c_border, 0.35)};
-                border-radius: 18px;
-            }}
-            QFrame#spreadValueFrame[mode="select"] {{
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {c_capsule_glow},
-                    stop: 0.50 {c_capsule_mid},
-                    stop: 1 {c_surface}
-                );
-                border: 1px solid {c_capsule_border};
-                border-radius: 16px;
-            }}
-            QFrame#spreadValueFrame[mode="spread"] {{
                 background-color: transparent;
                 border: none;
-                border-radius: 16px;
+                border-radius: 18px;
             }}
-            QFrame#spreadValueInner[mode="spread"] {{
-                background-color: {c_alt};
+            QFrame#spreadValueFrame {{
+                background-color: transparent;
                 border: none;
                 border-radius: 14px;
             }}
-            QFrame#spreadValueInner[mode="select"] {{
+            QFrame#spreadValueInner {{
                 background-color: transparent;
                 border: none;
-                border-radius: 16px;
+                border-radius: 14px;
+            }}
+            QFrame#spreadValueFrame[mode="select"][variant="neon_frame"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueInner[mode="select"][variant="neon_frame"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueFrame[mode="select"][variant="glass_slate"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueInner[mode="select"][variant="glass_slate"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueFrame[mode="select"][variant="signal_split"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueInner[mode="select"][variant="signal_split"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueFrame[mode="select"][variant="minimal_pro"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueInner[mode="select"][variant="minimal_pro"] {{
+                background-color: transparent;
+                border: none;
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="neon_frame"] {{
+                background-color: {self._rgba(c_surface, 0.96)};
+                border: 1px solid {self._rgba(c_accent, 0.45)};
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="glass_slate"] {{
+                background-color: {self._rgba(c_surface, 0.96)};
+                border: 1px solid {self._rgba(c_border, 0.74)};
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"] {{
+                background-color: {self._rgba(c_surface, 0.96)};
+                border-top: 1px solid {self._rgba(c_border, 0.62)};
+                border-bottom: 1px solid {self._rgba(c_border, 0.62)};
+                border-left: 3px solid {self._rgba(c_border, 0.76)};
+                border-right: 3px solid {self._rgba(c_border, 0.76)};
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"][edgeTone="left_cheap"] {{
+                border-left: 3px solid {self._rgba(c_success, 0.92)};
+                border-right: 3px solid {self._rgba(c_danger, 0.92)};
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"][edgeTone="right_cheap"] {{
+                border-left: 3px solid {self._rgba(c_danger, 0.92)};
+                border-right: 3px solid {self._rgba(c_success, 0.92)};
+            }}
+            QFrame#spreadValueFrame[mode="spread"][variant="minimal_pro"] {{
+                background-color: transparent;
+                border: 1px solid {self._rgba(c_border, 0.82)};
+            }}
+            QFrame#spreadValueInner[mode="spread"] {{
+                background-color: {self._rgba(c_alt, 0.95)};
+                border: none;
+                border-radius: 12px;
+            }}
+            QFrame#spreadValueInner[mode="spread"][variant="minimal_pro"] {{
+                background-color: transparent;
             }}
             QPushButton#spreadActionButton {{
-                background-color: transparent;
                 color: {c_primary};
-                border: none;
-                border-radius: 16px;
+                border-radius: 14px;
                 font-size: 20px;
                 font-weight: 700;
                 padding: 6px 12px;
             }}
-            QPushButton#spreadActionButton:hover {{
-                background-color: {c_capsule_hover};
+            QPushButton#spreadActionButton[variant="neon_frame"] {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {self._rgba(c_accent, 0.20)},
+                    stop: 1 {self._rgba(c_surface, 0.88)}
+                );
+                border: 1px solid {self._rgba(c_accent, 0.72)};
+            }}
+            QPushButton#spreadActionButton[variant="neon_frame"]:hover {{
+                background-color: {self._rgba(c_accent, 0.28)};
+            }}
+            QPushButton#spreadActionButton[variant="glass_slate"] {{
+                background-color: {self._rgba(c_surface, 0.78)};
+                border: 1px solid {self._rgba(c_border, 0.74)};
+            }}
+            QPushButton#spreadActionButton[variant="glass_slate"]:hover {{
+                background-color: {self._rgba(c_alt, 0.88)};
+            }}
+            QPushButton#spreadActionButton[variant="signal_split"] {{
+                background-color: {self._rgba(c_surface, 0.84)};
+                border: 1px solid {self._rgba(c_border, 0.74)};
+            }}
+            QPushButton#spreadActionButton[variant="signal_split"]:hover {{
+                background-color: {self._rgba(c_alt, 0.92)};
+            }}
+            QPushButton#spreadActionButton[variant="minimal_pro"] {{
+                background-color: transparent;
+                border: 1px solid {self._rgba(c_border, 0.82)};
+            }}
+            QPushButton#spreadActionButton[variant="minimal_pro"]:hover {{
+                background-color: {self._rgba(c_alt, 0.58)};
             }}
             QPushButton#spreadActionButton:disabled {{
                 color: {c_muted};
                 background-color: transparent;
             }}
             QLabel#spreadValueLabel {{
-                color: {c_accent};
+                background-color: transparent;
+                border: none;
                 font-size: 56px;
                 font-weight: 800;
                 letter-spacing: 0.5px;
+            }}
+            QLabel#spreadValueLabel[variant="neon_frame"] {{
+                color: {c_accent};
+            }}
+            QLabel#spreadValueLabel[variant="glass_slate"] {{
+                color: {c_primary};
+            }}
+            QLabel#spreadValueLabel[variant="signal_split"] {{
+                color: {c_primary};
+            }}
+            QLabel#spreadValueLabel[variant="minimal_pro"] {{
+                color: {c_primary};
             }}
             QLabel#spreadValueLabel[empty="true"] {{
                 color: {c_muted};
@@ -596,6 +700,8 @@ class SpreadSnipingTab(
                 popup = column.pair_completer.popup()
                 popup.setObjectName("pairPopup")
                 popup.setStyleSheet(popup_style)
+
+        self._apply_spread_visual_variant()
 
     def retranslate_ui(self):
         if hasattr(self, "spread_select_btn"):
@@ -746,6 +852,65 @@ class SpreadSnipingTab(
         button.style().polish(button)
         button.update()
 
+    def _set_spread_edge_tone(self, cheap_index, expensive_index):
+        frame = getattr(self, "spread_value_frame", None)
+        if frame is None:
+            return
+
+        tone = "neutral"
+        if cheap_index == 1 and expensive_index == 2:
+            tone = "left_cheap"
+        elif cheap_index == 2 and expensive_index == 1:
+            tone = "right_cheap"
+
+        if frame.property("edgeTone") == tone:
+            return
+        frame.setProperty("edgeTone", tone)
+        frame.style().unpolish(frame)
+        frame.style().polish(frame)
+        frame.update()
+
+    @classmethod
+    def _normalize_spread_variant(cls, variant_code):
+        code = str(variant_code or "").strip().lower()
+        if code in cls.SUPPORTED_SPREAD_VARIANTS:
+            return code
+        return "neon_frame"
+
+    def spread_visual_variant(self):
+        return self._spread_visual_variant
+
+    @staticmethod
+    def _repolish_widget(widget):
+        if widget is None:
+            return
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()
+
+    def _apply_spread_visual_variant(self):
+        variant = self._spread_visual_variant
+        frame = getattr(self, "spread_value_frame", None)
+        inner = getattr(self, "spread_value_inner", None)
+        action_btn = getattr(self, "spread_select_btn", None)
+        value_label = getattr(self, "spread_value_label", None)
+        for widget in (frame, inner, action_btn, value_label):
+            if widget is None:
+                continue
+            if widget.property("variant") == variant:
+                continue
+            widget.setProperty("variant", variant)
+            self._repolish_widget(widget)
+
+    def set_spread_visual_variant(self, variant_code):
+        normalized = self._normalize_spread_variant(variant_code)
+        if normalized == self._spread_visual_variant:
+            return
+        self._spread_visual_variant = normalized
+        self._apply_spread_visual_variant()
+        self.apply_theme()
+        self._refresh_spread_display()
+
     def _set_spread_pending_selection(self):
         if not getattr(self, "_spread_armed", False):
             return
@@ -783,14 +948,12 @@ class SpreadSnipingTab(
 
         if outer_layout is not None:
             if mode_value == "spread":
-                outer_layout.setContentsMargins(4, 1, 4, 1)
+                # Show a visible outer frame ring and keep the dark inner layer smaller.
+                outer_layout.setContentsMargins(2, 2, 2, 2)
             else:
                 outer_layout.setContentsMargins(0, 0, 0, 0)
         if stack is not None:
-            if mode_value == "spread":
-                stack.setContentsMargins(12, 6, 12, 6)
-            else:
-                stack.setContentsMargins(2, 2, 2, 2)
+            stack.setContentsMargins(2, 2, 2, 2)
 
         if not changed:
             return
@@ -813,6 +976,7 @@ class SpreadSnipingTab(
             select_btn.setEnabled(spread_value is not None)
             self._apply_exchange_tone(1, "neutral")
             self._apply_exchange_tone(2, "neutral")
+            self._set_spread_edge_tone(None, None)
             return
 
         self._set_spread_frame_mode("spread")
@@ -824,6 +988,7 @@ class SpreadSnipingTab(
             self._apply_exchange_tone(cheap_index, "cheap")
         if expensive_index in {1, 2}:
             self._apply_exchange_tone(expensive_index, "expensive")
+        self._set_spread_edge_tone(cheap_index, expensive_index)
 
         is_empty = spread_value is None
         if is_empty:
