@@ -34,7 +34,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             return
 
         self._strategy_defer_session_finalize = True
-        self._stop_strategy_loop()
+        self._stop_strategy_loop(reason="force_close")
         self._strategy_cycle_busy = True
         self._update_strategy_toggle_button()
         update_force_btn = getattr(self, "_update_strategy_force_close_button", None)
@@ -67,14 +67,14 @@ class SpreadStrategyRuntimeExecutionMixin:
         if error_text:
             self._trace_runtime("loop_stop", reason="prerequisites_failed", details=error_text)
             self._set_strategy_status(error_text)
-            self._stop_strategy_loop()
+            self._stop_strategy_loop(reason="prerequisites_failed")
             return
 
         same_pos_error = self._ensure_same_position_context()
         if same_pos_error:
             self._trace_runtime("loop_stop", reason="position_context_mismatch", details=same_pos_error)
             self._set_strategy_status(same_pos_error)
-            self._stop_strategy_loop()
+            self._stop_strategy_loop(reason="position_context_mismatch")
             return
 
         spread_state = self._calculate_spread_state()
@@ -100,6 +100,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             return
         if self._maybe_start_reconcile(spread_state):
             return
+        self._apply_strategy_signal_hysteresis()
         phase = str(self._strategy_state.phase or "")
 
         action = None
@@ -128,6 +129,24 @@ class SpreadStrategyRuntimeExecutionMixin:
         sell_pair = ""
 
         if action == "entry":
+            stale_indexes = self._runtime_entry_stale_quote_indexes()
+            if stale_indexes:
+                reason_text = tr(
+                    "spread.strategy.net_reason.stale_quotes",
+                    indexes=", ".join(str(v) for v in stale_indexes),
+                )
+                self._trace_runtime(
+                    "entry_blocked_reason",
+                    reason="quote_stale",
+                    indexes=",".join(str(v) for v in stale_indexes),
+                    stale_sec=f"{float(getattr(self, 'ENTRY_QUOTE_STALE_SEC', 0.8) or 0.8):.3f}",
+                )
+                self._set_strategy_status(
+                    tr("spread.strategy.warn.net_degraded", reason=reason_text),
+                    code="entry_quote_stale",
+                )
+                self._update_strategy_state_label()
+                return
             if buy_index not in {1, 2} or sell_index not in {1, 2}:
                 return
             buy_col = self._column(buy_index)
@@ -154,7 +173,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             if not buy_exchange or not sell_exchange or not buy_pair or not sell_pair:
                 self._trace_runtime("loop_stop", reason="position_context_missing_on_exit")
                 self._set_strategy_status(tr("spread.strategy.error.position_context_missing"))
-                self._stop_strategy_loop()
+                self._stop_strategy_loop(reason="position_context_missing_on_exit")
                 return
             leg1_qty = float(self._to_float(getattr(self._strategy_state, "leg1_qty", 0.0)) or 0.0)
             leg2_qty = float(self._to_float(getattr(self._strategy_state, "leg2_qty", 0.0)) or 0.0)
@@ -176,6 +195,23 @@ class SpreadStrategyRuntimeExecutionMixin:
 
         buy_best_price_hint = self._resolve_strategy_best_price_hint(buy_index, "buy")
         sell_best_price_hint = self._resolve_strategy_best_price_hint(sell_index, "sell")
+        adaptive_order = self._runtime_choose_first_exchange(buy_exchange, sell_exchange)
+        preferred_first_exchange = str((adaptive_order or {}).get("first_exchange") or "").strip()
+        adaptive_reason = str((adaptive_order or {}).get("reason") or "").strip()
+        left_stats = (adaptive_order or {}).get("left") or {}
+        right_stats = (adaptive_order or {}).get("right") or {}
+        self._trace_runtime(
+            "adaptive_first_leg",
+            action=action,
+            first_exchange=preferred_first_exchange,
+            buy_exchange=buy_exchange,
+            sell_exchange=sell_exchange,
+            buy_p95=left_stats.get("p95_sec"),
+            sell_p95=right_stats.get("p95_sec"),
+            buy_samples=left_stats.get("samples"),
+            sell_samples=right_stats.get("samples"),
+            reason=adaptive_reason,
+        )
 
         self._strategy_cycle_busy = True
         self._update_strategy_toggle_button()
@@ -195,6 +231,12 @@ class SpreadStrategyRuntimeExecutionMixin:
             "max_slippage_pct": float(self._strategy_config.max_slippage_pct or 0.0),
             "buy_best_price_hint": buy_best_price_hint,
             "sell_best_price_hint": sell_best_price_hint,
+            "preferred_first_exchange": preferred_first_exchange,
+            "adaptive_first_reason": adaptive_reason,
+            "adaptive_buy_p95_sec": left_stats.get("p95_sec"),
+            "adaptive_sell_p95_sec": right_stats.get("p95_sec"),
+            "adaptive_buy_samples": left_stats.get("samples"),
+            "adaptive_sell_samples": right_stats.get("samples"),
         }
         self._trace_runtime(
             "step_submit",
@@ -209,6 +251,12 @@ class SpreadStrategyRuntimeExecutionMixin:
             slippage_pct=payload.get("max_slippage_pct"),
             buy_best_price_hint=payload.get("buy_best_price_hint"),
             sell_best_price_hint=payload.get("sell_best_price_hint"),
+            preferred_first_exchange=payload.get("preferred_first_exchange"),
+            adaptive_first_reason=payload.get("adaptive_first_reason"),
+            adaptive_buy_p95_sec=payload.get("adaptive_buy_p95_sec"),
+            adaptive_sell_p95_sec=payload.get("adaptive_sell_p95_sec"),
+            adaptive_buy_samples=payload.get("adaptive_buy_samples"),
+            adaptive_sell_samples=payload.get("adaptive_sell_samples"),
         )
         self._strategy_last_step_payload = dict(payload)
         self._mark_strategy_submit()
@@ -232,6 +280,8 @@ class SpreadStrategyRuntimeExecutionMixin:
             max_slippage_pct=data.get("max_slippage_pct"),
             buy_best_price_hint=data.get("buy_best_price_hint"),
             sell_best_price_hint=data.get("sell_best_price_hint"),
+            preferred_first_exchange=data.get("preferred_first_exchange"),
+            adaptive_first_reason=data.get("adaptive_first_reason"),
         )
         if isinstance(result, dict):
             result.setdefault("buy_index", data.get("buy_index"))
@@ -240,6 +290,12 @@ class SpreadStrategyRuntimeExecutionMixin:
             result.setdefault("sell_exchange", data.get("sell_exchange"))
             result.setdefault("buy_pair", data.get("buy_pair"))
             result.setdefault("sell_pair", data.get("sell_pair"))
+            result.setdefault("preferred_first_exchange", data.get("preferred_first_exchange"))
+            result.setdefault("adaptive_first_reason", data.get("adaptive_first_reason"))
+            result.setdefault("adaptive_buy_p95_sec", data.get("adaptive_buy_p95_sec"))
+            result.setdefault("adaptive_sell_p95_sec", data.get("adaptive_sell_p95_sec"))
+            result.setdefault("adaptive_buy_samples", data.get("adaptive_buy_samples"))
+            result.setdefault("adaptive_sell_samples", data.get("adaptive_sell_samples"))
         return result
 
     def _on_strategy_step_result(self, result):
@@ -274,6 +330,11 @@ class SpreadStrategyRuntimeExecutionMixin:
                 legs_dispatch_delta_sec=data.get("legs_dispatch_delta_sec"),
                 decision_to_first_dispatch_sec=data.get("decision_to_first_dispatch_sec"),
                 decision_to_all_dispatched_sec=data.get("decision_to_all_dispatched_sec"),
+                first_exchange=data.get("first_exchange"),
+                second_exchange=data.get("second_exchange"),
+                execution_order_mode=data.get("execution_order_mode"),
+                preferred_first_exchange=data.get("preferred_first_exchange"),
+                adaptive_first_reason=data.get("adaptive_first_reason"),
             )
             net_reason = self._runtime_extract_network_reason_from_step(data)
             if net_reason:
@@ -296,7 +357,7 @@ class SpreadStrategyRuntimeExecutionMixin:
                 self._update_strategy_state_label()
                 return
             self._set_strategy_status(self._format_strategy_step_error(data))
-            self._stop_strategy_loop()
+            self._stop_strategy_loop(reason="step_result_fail")
             return
 
         action = str(data.get("action") or "").strip().lower()
@@ -327,13 +388,18 @@ class SpreadStrategyRuntimeExecutionMixin:
             legs_dispatch_delta_sec=data.get("legs_dispatch_delta_sec"),
             decision_to_first_dispatch_sec=data.get("decision_to_first_dispatch_sec"),
             decision_to_all_dispatched_sec=data.get("decision_to_all_dispatched_sec"),
+            first_exchange=data.get("first_exchange"),
+            second_exchange=data.get("second_exchange"),
+            execution_order_mode=data.get("execution_order_mode"),
+            preferred_first_exchange=data.get("preferred_first_exchange"),
+            adaptive_first_reason=data.get("adaptive_first_reason"),
         )
         if executed_qty <= 0 and not (action == "exit" and bool(data.get("nothing_to_close"))):
             self._set_strategy_status(tr(
                 "spread.strategy.error.execution_failed",
                 reason="invalid_executed_qty",
             ))
-            self._stop_strategy_loop()
+            self._stop_strategy_loop(reason="invalid_executed_qty")
             return
 
         if action == "entry":
@@ -356,6 +422,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             if bool(data.get("nothing_to_close")):
                 self._strategy_state.active_hedged_size = 0.0
                 self._clear_position_context()
+                self._arm_entry_cooldown_after_exit()
                 self._clear_strategy_status()
                 self._refresh_spread_display()
                 self._refresh_strategy_exchanges_after_step(data)
@@ -364,6 +431,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             self._strategy_state.active_hedged_size = max(0.0, current - executed_qty)
             if self._strategy_state.active_hedged_size <= 1e-12:
                 self._clear_position_context()
+            self._arm_entry_cooldown_after_exit()
 
         self._clear_strategy_status()
         self._refresh_spread_display()
@@ -394,7 +462,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             "spread.strategy.error.execution_failed",
             reason=str(error_text or "").strip() or "unknown",
         ))
-        self._stop_strategy_loop()
+        self._stop_strategy_loop(reason="step_task_error")
 
     def _on_strategy_step_finished(self):
         self._strategy_worker = None
@@ -439,6 +507,7 @@ class SpreadStrategyRuntimeExecutionMixin:
         self._strategy_state.active_hedged_size = 0.0
         self._clear_position_context()
         self._clear_entry_target_lock(reason="force_closed")
+        self._arm_entry_cooldown_after_exit()
         self._clear_strategy_status()
         self._refresh_spread_display()
         self._refresh_strategy_exchanges_after_step(

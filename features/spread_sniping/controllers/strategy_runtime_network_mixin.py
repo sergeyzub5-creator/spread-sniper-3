@@ -72,7 +72,7 @@ class SpreadStrategyRuntimeNetworkMixin:
                 selected.append(idx)
         return tuple(selected)
 
-    def _is_runtime_quote_fresh(self, index, now_ts=None):
+    def _is_runtime_quote_fresh(self, index, now_ts=None, stale_sec=None):
         idx = int(index) if index in {1, 2} else None
         if idx not in {1, 2}:
             return False
@@ -83,15 +83,24 @@ class SpreadStrategyRuntimeNetworkMixin:
         if ts <= 0:
             return False
         now_value = float(now_ts if now_ts is not None else time.monotonic())
-        return (now_value - ts) <= float(self.QUOTE_STALE_SEC)
+        stale_limit = self._to_float(stale_sec)
+        if stale_limit is None or stale_limit <= 0:
+            stale_limit = float(getattr(self, "QUOTE_STALE_SEC", 8.0) or 8.0)
+        return (now_value - ts) <= float(stale_limit)
 
-    def _runtime_stale_quote_indexes(self, now_ts=None):
+    def _runtime_stale_quote_indexes(self, now_ts=None, stale_sec=None):
         now_value = float(now_ts if now_ts is not None else time.monotonic())
         stale = []
         for idx in self._selected_runtime_indexes():
-            if not self._is_runtime_quote_fresh(idx, now_value):
+            if not self._is_runtime_quote_fresh(idx, now_value, stale_sec=stale_sec):
                 stale.append(idx)
         return tuple(stale)
+
+    def _runtime_entry_stale_quote_indexes(self, now_ts=None):
+        return self._runtime_stale_quote_indexes(
+            now_ts=now_ts,
+            stale_sec=float(getattr(self, "ENTRY_QUOTE_STALE_SEC", 0.8) or 0.8),
+        )
 
     def _runtime_set_degraded(self, reason, source="runtime"):
         reason_text = self._normalize_runtime_error_text(reason)
@@ -121,7 +130,10 @@ class SpreadStrategyRuntimeNetworkMixin:
         if not self._runtime_network_degraded:
             return True
         now = time.monotonic()
-        stale = self._runtime_stale_quote_indexes(now)
+        stale = self._runtime_stale_quote_indexes(
+            now_ts=now,
+            stale_sec=float(getattr(self, "EXIT_QUOTE_STALE_SEC", getattr(self, "QUOTE_STALE_SEC", 8.0)) or 8.0),
+        )
         if stale:
             return False
         fault_age = now - float(self._runtime_last_network_fault_ts or 0.0)
@@ -170,13 +182,6 @@ class SpreadStrategyRuntimeNetworkMixin:
             return False
 
     def _runtime_gate_cycle(self):
-        stale_indexes = self._runtime_stale_quote_indexes()
-        if stale_indexes:
-            self._runtime_set_degraded(
-                tr("spread.strategy.net_reason.stale_quotes", indexes=", ".join(str(v) for v in stale_indexes)),
-                source="quote_stale",
-            )
-
         if not self._runtime_network_degraded:
             return False
 
@@ -195,6 +200,58 @@ class SpreadStrategyRuntimeNetworkMixin:
             )
             self._update_strategy_state_label()
         return True
+
+    def _runtime_send_ack_stats(self, exchange_name):
+        name = str(exchange_name or "").strip().lower()
+        if not name:
+            return {"exchange": "", "samples": 0, "p95_sec": None}
+        self._runtime_trim_send_ack_samples()
+        samples = list(getattr(self, "_runtime_send_ack_samples", ()) or ())
+        values = []
+        for item in samples:
+            if not isinstance(item, (list, tuple)) or len(item) < 3:
+                continue
+            item_name = str(item[1] or "").strip().lower()
+            if item_name != name:
+                continue
+            value = self._to_float(item[2])
+            if value is None or value <= 0:
+                continue
+            values.append(float(value))
+        if not values:
+            return {"exchange": name, "samples": 0, "p95_sec": None}
+        return {
+            "exchange": name,
+            "samples": int(len(values)),
+            "p95_sec": float(self._runtime_percentile(values, 95)),
+        }
+
+    def _runtime_choose_first_exchange(self, first_exchange, second_exchange):
+        left_name = str(first_exchange or "").strip()
+        right_name = str(second_exchange or "").strip()
+        if not left_name or not right_name:
+            return {"first_exchange": "", "left": None, "right": None, "reason": "invalid"}
+
+        left = self._runtime_send_ack_stats(left_name)
+        right = self._runtime_send_ack_stats(right_name)
+        left_p95 = self._to_float(left.get("p95_sec"))
+        right_p95 = self._to_float(right.get("p95_sec"))
+        left_samples = int(left.get("samples") or 0)
+        right_samples = int(right.get("samples") or 0)
+        enough_left = left_p95 is not None and left_samples >= 4
+        enough_right = right_p95 is not None and right_samples >= 4
+        if not enough_left and not enough_right:
+            return {"first_exchange": "", "left": left, "right": right, "reason": "insufficient_samples"}
+        if enough_left and not enough_right:
+            return {"first_exchange": left_name, "left": left, "right": right, "reason": "left_only"}
+        if enough_right and not enough_left:
+            return {"first_exchange": right_name, "left": left, "right": right, "reason": "right_only"}
+
+        if abs(float(left_p95) - float(right_p95)) < 0.03:
+            return {"first_exchange": "", "left": left, "right": right, "reason": "delta_too_small"}
+        if float(left_p95) >= float(right_p95):
+            return {"first_exchange": left_name, "left": left, "right": right, "reason": "left_slower"}
+        return {"first_exchange": right_name, "left": left, "right": right, "reason": "right_slower"}
 
     def _runtime_extract_network_reason_from_result(self, result_payload):
         payload = result_payload if isinstance(result_payload, dict) else {}

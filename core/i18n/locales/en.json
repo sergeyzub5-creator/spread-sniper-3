@@ -153,7 +153,7 @@
   "spread.strategy.phase_wait_entry": "wait entry",
   "spread.strategy.phase_wait_exit": "wait exit",
   "spread.strategy.process_line_top": "Phase {phase}   |   Fill {active}/{target}   |   En {wait_entry} (s {next_entry})   |   Ex {wait_exit} (s {next_exit})",
-  "spread.strategy.session_pnl_short": "Session Σ {start}->{end} · PnL {pnl} USDT",
+  "spread.strategy.session_pnl_short": "Session ОЈ {start}->{end} В· PnL {pnl} USDT",
   "spread.strategy.process_line_bottom_legs": "L1 {leg1_exchange} {leg1_pair} {leg1_direction} {leg1_qty}/{leg1_target} PnL {leg1_pnl}   |   L2 {leg2_exchange} {leg2_pair} {leg2_direction} {leg2_qty}/{leg2_target} PnL {leg2_pnl}",
   "spread.strategy.dir.long": "LONG",
   "spread.strategy.dir.short": "SHORT",
@@ -211,6 +211,8 @@
   "status.net_checking": "Network: checking...",
   "status.net_offline": "Network: offline",
   "status.net_online": "Network: online",
+  "status.recording_on": "Statistics recording is active",
+  "status.recording_off": "Statistics recording is disabled",
   "status.warning_prefix": "Warning: {message}",
   "tab.exchanges": "Exchanges",
   "tab.test": "Test",
@@ -220,3 +222,4 @@
   "theme.graphite_pro": "Light",
   "theme.steel": "Gray"
 }
+

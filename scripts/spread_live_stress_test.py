@@ -258,6 +258,12 @@ class SpreadLiveStressRunner(QObject):
             "signal_raw_edge_pct": _safe_float((spread_state or {}).get("raw_edge_pct"), 0.0),
             "signal_effective_edge_pct": _safe_float((spread_state or {}).get("effective_edge_pct"), 0.0),
             "signal_phase": str((spread_state or {}).get("phase") or ""),
+            "preferred_first_exchange": str(data.get("preferred_first_exchange") or "").strip(),
+            "adaptive_first_reason": str(data.get("adaptive_first_reason") or "").strip(),
+            "adaptive_buy_p95_sec": _safe_float(data.get("adaptive_buy_p95_sec"), 0.0),
+            "adaptive_sell_p95_sec": _safe_float(data.get("adaptive_sell_p95_sec"), 0.0),
+            "adaptive_buy_samples": int(data.get("adaptive_buy_samples") or 0),
+            "adaptive_sell_samples": int(data.get("adaptive_sell_samples") or 0),
         }
         self.counters["step_submit"] += 1
 
@@ -305,6 +311,30 @@ class SpreadLiveStressRunner(QObject):
         if pending:
             latency_sec = max(0.0, now_ts - float(pending.get("submitted_at_ts") or now_ts))
         fill = self._extract_fill_edge(data)
+        first_decision_to_send = _safe_float(data.get("first_decision_to_send_sec"), 0.0)
+        second_decision_to_send = _safe_float(data.get("second_decision_to_send_sec"), 0.0)
+        first_send_ack = _safe_float(data.get("first_send_ack_sec"), 0.0)
+        second_send_ack = _safe_float(data.get("second_send_ack_sec"), 0.0)
+        first_ack_fill = _safe_float(data.get("first_ack_fill_sec"), 0.0)
+        second_ack_fill = _safe_float(data.get("second_ack_fill_sec"), 0.0)
+        net_exposure_time = _safe_float(data.get("net_exposure_time_sec"), 0.0)
+
+        def _fill_from_decision(decision_to_send, send_ack_sec, ack_fill_sec):
+            if send_ack_sec <= 0 and ack_fill_sec <= 0:
+                return None
+            return max(0.0, float(decision_to_send)) + max(0.0, float(send_ack_sec)) + max(0.0, float(ack_fill_sec))
+
+        first_fill_from_decision = _fill_from_decision(first_decision_to_send, first_send_ack, first_ack_fill)
+        second_fill_from_decision = _fill_from_decision(second_decision_to_send, second_send_ack, second_ack_fill)
+        fill_between_legs = None
+        if first_fill_from_decision is not None and second_fill_from_decision is not None:
+            fill_between_legs = abs(float(first_fill_from_decision) - float(second_fill_from_decision))
+
+        time_to_hedge_full = None
+        if net_exposure_time > 0 and first_fill_from_decision is not None and second_fill_from_decision is not None:
+            first_send_from_decision = min(max(0.0, first_decision_to_send), max(0.0, second_decision_to_send))
+            first_fill_after_send = max(0.0, min(first_fill_from_decision, second_fill_from_decision) - first_send_from_decision)
+            time_to_hedge_full = max(0.0, float(net_exposure_time) - float(first_fill_after_send))
 
         record = {
             "result_at": now_iso,
@@ -318,21 +348,34 @@ class SpreadLiveStressRunner(QObject):
             "latency_sec": latency_sec,
             "first_latency_sec": _safe_float(data.get("first_latency_sec"), 0.0),
             "second_latency_sec": _safe_float(data.get("second_latency_sec"), 0.0),
-            "first_send_ack_sec": _safe_float(data.get("first_send_ack_sec"), 0.0),
-            "second_send_ack_sec": _safe_float(data.get("second_send_ack_sec"), 0.0),
-            "first_ack_fill_sec": _safe_float(data.get("first_ack_fill_sec"), 0.0),
-            "second_ack_fill_sec": _safe_float(data.get("second_ack_fill_sec"), 0.0),
+            "first_send_ack_sec": first_send_ack,
+            "second_send_ack_sec": second_send_ack,
+            "first_ack_fill_sec": first_ack_fill,
+            "second_ack_fill_sec": second_ack_fill,
             "first_submit_total_sec": _safe_float(data.get("first_submit_total_sec"), 0.0),
             "second_submit_total_sec": _safe_float(data.get("second_submit_total_sec"), 0.0),
-            "first_decision_to_send_sec": _safe_float(data.get("first_decision_to_send_sec"), 0.0),
-            "second_decision_to_send_sec": _safe_float(data.get("second_decision_to_send_sec"), 0.0),
+            "first_decision_to_send_sec": first_decision_to_send,
+            "second_decision_to_send_sec": second_decision_to_send,
             "first_queue_wait_sec": _safe_float(data.get("first_queue_wait_sec"), 0.0),
             "second_queue_wait_sec": _safe_float(data.get("second_queue_wait_sec"), 0.0),
             "legs_send_delta_sec": _safe_float(data.get("legs_send_delta_sec"), 0.0),
             "legs_dispatch_delta_sec": _safe_float(data.get("legs_dispatch_delta_sec"), 0.0),
             "decision_to_first_dispatch_sec": _safe_float(data.get("decision_to_first_dispatch_sec"), 0.0),
             "decision_to_all_dispatched_sec": _safe_float(data.get("decision_to_all_dispatched_sec"), 0.0),
-            "net_exposure_time_sec": _safe_float(data.get("net_exposure_time_sec"), 0.0),
+            "net_exposure_time_sec": net_exposure_time,
+            "fill_between_legs_sec": fill_between_legs,
+            "time_to_hedge_full_sec": time_to_hedge_full,
+            "first_fill_from_decision_sec": first_fill_from_decision,
+            "second_fill_from_decision_sec": second_fill_from_decision,
+            "first_exchange": str(data.get("first_exchange") or "").strip(),
+            "second_exchange": str(data.get("second_exchange") or "").strip(),
+            "preferred_first_exchange": str(data.get("preferred_first_exchange") or pending.get("preferred_first_exchange") or "").strip(),
+            "execution_order_mode": str(data.get("execution_order_mode") or "").strip(),
+            "adaptive_first_reason": str(data.get("adaptive_first_reason") or pending.get("adaptive_first_reason") or "").strip(),
+            "adaptive_buy_p95_sec": _safe_float(data.get("adaptive_buy_p95_sec"), pending.get("adaptive_buy_p95_sec", 0.0)),
+            "adaptive_sell_p95_sec": _safe_float(data.get("adaptive_sell_p95_sec"), pending.get("adaptive_sell_p95_sec", 0.0)),
+            "adaptive_buy_samples": int(data.get("adaptive_buy_samples") or pending.get("adaptive_buy_samples") or 0),
+            "adaptive_sell_samples": int(data.get("adaptive_sell_samples") or pending.get("adaptive_sell_samples") or 0),
             "hedge_escalation": dict(data.get("hedge_escalation") or {}) if isinstance(data.get("hedge_escalation"), dict) else {},
             "panic_unwind": dict(data.get("panic_unwind") or {}) if isinstance(data.get("panic_unwind"), dict) else {},
             "signal": {
@@ -590,7 +633,15 @@ class SpreadLiveStressRunner(QObject):
         decision_to_first_dispatch_all = []
         decision_to_all_dispatched_all = []
         net_exposure_times = []
+        fill_between_legs_times = []
+        time_to_hedge_full_times = []
         exchange_timing = {}
+        first_exchange_counts = {}
+        second_exchange_counts = {}
+        preferred_first_exchange_counts = {}
+        execution_order_mode_counts = {}
+        adaptive_reason_counts = {}
+        reason_not_adaptive_counts = {}
         partial_fill_legs = 0
         partial_fill_trades = 0
         escalation_used_trades = 0
@@ -653,6 +704,13 @@ class SpreadLiveStressRunner(QObject):
             decision_to_first_dispatch = _safe_float(trade.get("decision_to_first_dispatch_sec"), 0.0)
             decision_to_all_dispatched = _safe_float(trade.get("decision_to_all_dispatched_sec"), 0.0)
             net_exposure_sec = _safe_float(trade.get("net_exposure_time_sec"), 0.0)
+            fill_between_legs_sec = trade.get("fill_between_legs_sec")
+            time_to_hedge_full_sec = trade.get("time_to_hedge_full_sec")
+            first_exchange = str(trade.get("first_exchange") or "").strip()
+            second_exchange = str(trade.get("second_exchange") or "").strip()
+            preferred_first_exchange = str(trade.get("preferred_first_exchange") or "").strip()
+            execution_order_mode = str(trade.get("execution_order_mode") or "").strip() or "default"
+            adaptive_reason = str(trade.get("adaptive_first_reason") or "").strip() or "unknown"
 
             if legs_send_delta >= 0:
                 legs_send_delta_all.append(float(legs_send_delta))
@@ -664,6 +722,23 @@ class SpreadLiveStressRunner(QObject):
                 decision_to_all_dispatched_all.append(float(decision_to_all_dispatched))
             if net_exposure_sec > 0:
                 net_exposure_times.append(float(net_exposure_sec))
+            if isinstance(fill_between_legs_sec, (int, float)) and float(fill_between_legs_sec) >= 0:
+                fill_between_legs_times.append(float(fill_between_legs_sec))
+            if isinstance(time_to_hedge_full_sec, (int, float)) and float(time_to_hedge_full_sec) >= 0:
+                time_to_hedge_full_times.append(float(time_to_hedge_full_sec))
+
+            if first_exchange:
+                first_exchange_counts[first_exchange] = int(first_exchange_counts.get(first_exchange, 0) or 0) + 1
+            if second_exchange:
+                second_exchange_counts[second_exchange] = int(second_exchange_counts.get(second_exchange, 0) or 0) + 1
+            if preferred_first_exchange:
+                preferred_first_exchange_counts[preferred_first_exchange] = int(
+                    preferred_first_exchange_counts.get(preferred_first_exchange, 0) or 0
+                ) + 1
+            execution_order_mode_counts[execution_order_mode] = int(execution_order_mode_counts.get(execution_order_mode, 0) or 0) + 1
+            adaptive_reason_counts[adaptive_reason] = int(adaptive_reason_counts.get(adaptive_reason, 0) or 0) + 1
+            if (not preferred_first_exchange) and execution_order_mode == "default":
+                reason_not_adaptive_counts[adaptive_reason] = int(reason_not_adaptive_counts.get(adaptive_reason, 0) or 0) + 1
 
             escalation = trade.get("hedge_escalation") if isinstance(trade.get("hedge_escalation"), dict) else {}
             if bool(escalation.get("used")):
@@ -774,6 +849,28 @@ class SpreadLiveStressRunner(QObject):
                 },
             }
 
+        unhedged_qty_series = [
+            abs(_safe_float((snap or {}).get("unbalanced_qty"), 0.0))
+            for snap in (self.snapshots or [])
+            if isinstance(snap, dict)
+        ]
+        entry_blocked_quote_stale = 0
+        for ev in self.trace_events:
+            if not isinstance(ev, dict):
+                continue
+            if str(ev.get("event") or "").strip() != "strategy.entry_blocked_reason":
+                continue
+            fields = ev.get("fields") if isinstance(ev.get("fields"), dict) else {}
+            if str(fields.get("reason") or "").strip().lower() == "quote_stale":
+                entry_blocked_quote_stale += 1
+        entry_submit_count = int(
+            sum(1 for trade in self.completed_trades if str(trade.get("action") or "").strip().lower() == "entry")
+        )
+        entry_attempt_like = int(entry_submit_count + entry_blocked_quote_stale)
+        entry_blocked_quote_stale_pct = (
+            (float(entry_blocked_quote_stale) / float(entry_attempt_like)) * 100.0 if entry_attempt_like > 0 else 0.0
+        )
+
         return {
             "run_started_at": self._run_started_iso,
             "run_finished_at": self._run_finished_iso or _utc_iso(),
@@ -786,6 +883,8 @@ class SpreadLiveStressRunner(QObject):
                 "trades_failed": len(failed),
                 "entry_ok": len(entry_ok),
                 "exit_ok": len(exit_ok),
+                "entry_submits": int(entry_submit_count),
+                "entry_blocked_quote_stale": int(entry_blocked_quote_stale),
                 "snapshots": len(self.snapshots),
                 "inject_events": len(self.injected_events),
                 "partial_fill_trades": int(partial_fill_trades),
@@ -837,6 +936,27 @@ class SpreadLiveStressRunner(QObject):
                     "unhedged_over_1s": int(sum(1 for v in net_exposure_times if float(v) > 1.0)),
                     "unhedged_over_2s": int(sum(1 for v in net_exposure_times if float(v) > 2.0)),
                 },
+                "fill_between_legs_sec": {
+                    "avg": _avg(fill_between_legs_times),
+                    "p50": _percentile(fill_between_legs_times, 50),
+                    "p95": _percentile(fill_between_legs_times, 95),
+                    "p99": _percentile(fill_between_legs_times, 99),
+                    "max": max(fill_between_legs_times) if fill_between_legs_times else 0.0,
+                },
+                "time_to_hedge_full_sec": {
+                    "avg": _avg(time_to_hedge_full_times),
+                    "p50": _percentile(time_to_hedge_full_times, 50),
+                    "p95": _percentile(time_to_hedge_full_times, 95),
+                    "p99": _percentile(time_to_hedge_full_times, 99),
+                    "max": max(time_to_hedge_full_times) if time_to_hedge_full_times else 0.0,
+                },
+                "unhedged_qty": {
+                    "avg": _avg(unhedged_qty_series),
+                    "p50": _percentile(unhedged_qty_series, 50),
+                    "p95": _percentile(unhedged_qty_series, 95),
+                    "p99": _percentile(unhedged_qty_series, 99),
+                    "max": max(unhedged_qty_series) if unhedged_qty_series else 0.0,
+                },
                 "decision_to_send_sec": {
                     "avg": _avg(decision_to_send_all),
                     "p50": _percentile(decision_to_send_all, 50),
@@ -887,8 +1007,20 @@ class SpreadLiveStressRunner(QObject):
                 "panic_unwind": {
                     "used_trades": int(panic_unwind_used_trades),
                 },
+                "entry_blocked": {
+                    "quote_stale_count": int(entry_blocked_quote_stale),
+                    "quote_stale_pct_of_entry_attempts": float(entry_blocked_quote_stale_pct),
+                },
             },
             "timing_by_exchange": exchange_timing_summary,
+            "execution_order": {
+                "first_exchange": first_exchange_counts,
+                "second_exchange": second_exchange_counts,
+                "preferred_first_exchange": preferred_first_exchange_counts,
+                "execution_order_mode": execution_order_mode_counts,
+                "adaptive_reason": adaptive_reason_counts,
+                "reason_not_adaptive": reason_not_adaptive_counts,
+            },
             "counters": dict(self.counters),
         }
 

@@ -52,6 +52,7 @@ class NetworkStatusBar(QFrame):
         super().__init__(parent)
         self._online = None
         self._check_in_progress = False
+        self._recording_active = False
 
         self.setFrameStyle(QFrame.Shape.NoFrame)
 
@@ -72,6 +73,18 @@ class NetworkStatusBar(QFrame):
         network_layout.addWidget(self.net_indicator, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.network_capsule)
+        self.record_capsule = QFrame()
+        self.record_capsule.setObjectName("recordCapsule")
+        self.record_capsule.setFixedWidth(58)
+        self.record_capsule.setFixedHeight(34)
+        record_layout = QHBoxLayout(self.record_capsule)
+        record_layout.setContentsMargins(0, 0, 0, 0)
+        record_layout.setSpacing(0)
+        self.record_label = QLabel("REC")
+        self.record_label.setObjectName("recordLabel")
+        self.record_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        record_layout.addWidget(self.record_label)
+        layout.addWidget(self.record_capsule)
 
         layout.addStretch()
 
@@ -99,6 +112,7 @@ class NetworkStatusBar(QFrame):
         self.apply_theme()
         self.retranslate_ui()
         self._trigger_network_check()
+        self.set_recording_state(False)
 
     def stop_background_tasks(self):
         if hasattr(self, "clock_timer") and self.clock_timer is not None:
@@ -158,6 +172,20 @@ class NetworkStatusBar(QFrame):
             )
             self.network_capsule.setToolTip(tr("status.net_offline"))
 
+    def set_recording_state(self, active, tooltip=""):
+        self._recording_active = bool(active)
+        prop = "true" if self._recording_active else "false"
+        self.record_capsule.setProperty("recording", prop)
+        self.record_label.setProperty("recording", prop)
+        self.record_capsule.style().unpolish(self.record_capsule)
+        self.record_capsule.style().polish(self.record_capsule)
+        self.record_label.style().unpolish(self.record_label)
+        self.record_label.style().polish(self.record_label)
+        self.record_label.setText("REC")
+        self.record_capsule.setToolTip(tooltip or tr("status.recording_on" if self._recording_active else "status.recording_off"))
+        self.record_capsule.update()
+        self.record_label.update()
+
     def apply_theme(self):
         self.setStyleSheet(
             f"""
@@ -204,11 +232,46 @@ class NetworkStatusBar(QFrame):
             }}
             """
         )
+        self.record_capsule.setStyleSheet(
+            f"""
+            QFrame#recordCapsule {{
+                background: {theme_color('surface')};
+                border: 1px solid {theme_color('border')};
+                border-radius: 10px;
+            }}
+            QFrame#recordCapsule[recording="true"] {{
+                background: {theme_color('success_bg')};
+                border: 1px solid {theme_color('success')};
+            }}
+            QFrame#recordCapsule[recording="false"] {{
+                background: {theme_color('surface')};
+                border: 1px solid {theme_color('border')};
+            }}
+            """
+        )
+        self.record_label.setStyleSheet(
+            f"""
+            QLabel#recordLabel {{
+                color: {theme_color('text_muted')};
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.8px;
+            }}
+            QLabel#recordLabel[recording="true"] {{
+                color: {theme_color('success')};
+            }}
+            QLabel#recordLabel[recording="false"] {{
+                color: {theme_color('text_muted')};
+            }}
+            """
+        )
         self.error_label.setStyleSheet(f"color: {theme_color('danger')};")
         self._apply_network_state()
+        self.set_recording_state(self._recording_active, tooltip=self.record_capsule.toolTip())
 
     def retranslate_ui(self):
         self._apply_network_state()
+        self.set_recording_state(self._recording_active, tooltip=self.record_capsule.toolTip())
 
     def show_error(self, message):
         self.error_label.setText(tr("status.warning_prefix", message=message))

@@ -208,7 +208,7 @@ class SpreadStrategyRuntimeRecoveryMixin:
             return False
 
         self._strategy_defer_session_finalize = True
-        self._stop_strategy_loop()
+        self._stop_strategy_loop(reason="emergency_leg_close")
         self._strategy_cycle_busy = True
         self._update_strategy_toggle_button()
         update_force_btn = getattr(self, "_update_strategy_force_close_button", None)

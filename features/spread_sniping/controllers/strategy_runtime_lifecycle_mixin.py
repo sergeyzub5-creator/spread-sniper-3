@@ -43,10 +43,22 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._runtime_ack_red_pause_until_ts = 0.0
         self._runtime_ack_red_pause_sec = 45.0
         self._runtime_ack_guard_last_trace_ts = 0.0
+        self._strategy_entry_signal_since_ts = 0.0
+        self._strategy_exit_signal_since_ts = 0.0
+        self._strategy_entry_cooldown_until_ts = 0.0
+        self._strategy_auto_restart_enabled = True
+        self._strategy_auto_restart_delay_ms = 3500
+        self._strategy_auto_restart_pending = False
+        self._strategy_auto_restart_attempt = 0
+        self._strategy_auto_restart_last_reason = ""
+        self._strategy_manual_stop_requested = False
 
         self._strategy_timer = QTimer(self)
         self._strategy_timer.setInterval(self.STRATEGY_LOOP_INTERVAL_MS)
         self._strategy_timer.timeout.connect(self._on_strategy_loop_tick)
+        self._strategy_auto_restart_timer = QTimer(self)
+        self._strategy_auto_restart_timer.setSingleShot(True)
+        self._strategy_auto_restart_timer.timeout.connect(self._on_strategy_auto_restart_timeout)
         self._trace_runtime("runtime_init", loop_ms=self.STRATEGY_LOOP_INTERVAL_MS)
 
     def _clear_position_context(self):
@@ -212,6 +224,12 @@ class SpreadStrategyRuntimeLifecycleMixin:
                 timer.stop()
             except RuntimeError:
                 pass
+        restart_timer = getattr(self, "_strategy_auto_restart_timer", None)
+        if restart_timer is not None:
+            try:
+                restart_timer.stop()
+            except RuntimeError:
+                pass
         self._strategy_cycle_busy = False
         self._strategy_worker = None
         self._strategy_last_step_payload = None
@@ -240,6 +258,14 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._runtime_ack_mode_last_trace = ""
         self._runtime_ack_red_pause_until_ts = 0.0
         self._runtime_ack_guard_last_trace_ts = 0.0
+        self._strategy_entry_signal_since_ts = 0.0
+        self._strategy_exit_signal_since_ts = 0.0
+        self._strategy_entry_cooldown_until_ts = 0.0
+        self._strategy_auto_restart_enabled = False
+        self._strategy_auto_restart_pending = False
+        self._strategy_auto_restart_attempt = 0
+        self._strategy_auto_restart_last_reason = ""
+        self._strategy_manual_stop_requested = False
         runtime_service = getattr(self, "_runtime_service", None)
         runtime_shutdown = getattr(runtime_service, "shutdown", None)
         if callable(runtime_shutdown):
@@ -258,8 +284,10 @@ class SpreadStrategyRuntimeLifecycleMixin:
         if not hasattr(self, "_strategy_state"):
             return
         if self._strategy_state.is_running:
-            self._stop_strategy_loop()
+            self._strategy_manual_stop_requested = True
+            self._stop_strategy_loop(reason="manual_stop")
         else:
+            self._strategy_manual_stop_requested = False
             self._start_strategy_loop()
 
     def _on_strategy_start_clicked(self):
@@ -268,6 +296,11 @@ class SpreadStrategyRuntimeLifecycleMixin:
         if self._strategy_state.is_running:
             self._trace_runtime("start_click_skip", reason="already_running")
             return
+        self._strategy_manual_stop_requested = False
+        self._strategy_auto_restart_pending = False
+        restart_timer = getattr(self, "_strategy_auto_restart_timer", None)
+        if restart_timer is not None:
+            restart_timer.stop()
         self._trace_runtime("start_click")
         self._start_strategy_loop()
 
@@ -277,8 +310,9 @@ class SpreadStrategyRuntimeLifecycleMixin:
         if not self._strategy_state.is_running:
             self._trace_runtime("stop_click_skip", reason="already_stopped")
             return
+        self._strategy_manual_stop_requested = True
         self._trace_runtime("stop_click")
-        self._stop_strategy_loop()
+        self._stop_strategy_loop(reason="manual_stop")
 
     def _start_strategy_loop(self):
         error_text = self._validate_strategy_prerequisites()
@@ -310,6 +344,11 @@ class SpreadStrategyRuntimeLifecycleMixin:
                     self._runtime_quote_last_live_ts[idx] = now_ts
         self._strategy_state.is_running = True
         self._strategy_cycle_busy = False
+        self._strategy_auto_restart_pending = False
+        self._strategy_auto_restart_attempt = 0
+        restart_timer = getattr(self, "_strategy_auto_restart_timer", None)
+        if restart_timer is not None:
+            restart_timer.stop()
         leg_1 = self._leg_state_snapshot(1)
         leg_2 = self._leg_state_snapshot(2)
         self._strategy_emergency_last_qty = {
@@ -319,6 +358,8 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._strategy_emergency_last_ts = time.monotonic()
         self._strategy_emergency_candidate = None
         self._strategy_emergency_gate_trace_ts = 0.0
+        self._strategy_entry_signal_since_ts = 0.0
+        self._strategy_exit_signal_since_ts = 0.0
         self._update_strategy_toggle_button()
         update_force_btn = getattr(self, "_update_strategy_force_close_button", None)
         if callable(update_force_btn):
@@ -333,7 +374,7 @@ class SpreadStrategyRuntimeLifecycleMixin:
         )
         self._on_strategy_loop_tick()
 
-    def _stop_strategy_loop(self):
+    def _stop_strategy_loop(self, reason="stop"):
         prev_running = bool(getattr(self._strategy_state, "is_running", False))
         self._strategy_state.is_running = False
         if hasattr(self, "_strategy_timer"):
@@ -355,6 +396,9 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._runtime_ack_mode_last_trace = ""
         self._runtime_ack_red_pause_until_ts = 0.0
         self._runtime_ack_guard_last_trace_ts = 0.0
+        self._strategy_entry_signal_since_ts = 0.0
+        self._strategy_exit_signal_since_ts = 0.0
+        self._strategy_entry_cooldown_until_ts = 0.0
         if str(self._strategy_notice_code or "").strip().lower() in {"step_miss", "recoverable_retry", "network_degraded", "network_recovered", "leg_lost", "leg_lost_closed"}:
             self._clear_strategy_status()
         self._update_strategy_toggle_button()
@@ -362,14 +406,78 @@ class SpreadStrategyRuntimeLifecycleMixin:
         if callable(update_force_btn):
             update_force_btn()
         if prev_running and not bool(getattr(self, "_strategy_defer_session_finalize", False)):
-            self._capture_strategy_session_finish(reason="stop")
+            self._capture_strategy_session_finish(reason=reason or "stop")
         self._update_strategy_state_label()
         if prev_running:
             self._trace_runtime(
                 "stopped",
                 active_qty=float(self._strategy_state.active_hedged_size or 0.0),
                 phase=str(getattr(self._strategy_state, "phase", "") or ""),
+                reason=str(reason or "stop"),
             )
+        should_auto_restart = bool(
+            prev_running
+            and bool(getattr(self, "_strategy_auto_restart_enabled", False))
+            and str(reason or "").strip().lower() not in {"manual_stop", "force_close", "shutdown"}
+            and not bool(getattr(self, "_strategy_manual_stop_requested", False))
+        )
+        if should_auto_restart:
+            self._schedule_strategy_auto_restart(str(reason or "stop"))
+
+    def _schedule_strategy_auto_restart(self, stop_reason):
+        if not bool(getattr(self, "_strategy_auto_restart_enabled", False)):
+            return
+        restart_timer = getattr(self, "_strategy_auto_restart_timer", None)
+        if restart_timer is None:
+            return
+        if bool(getattr(self, "_strategy_state", None) and self._strategy_state.is_running):
+            return
+        self._strategy_auto_restart_pending = True
+        self._strategy_auto_restart_attempt = int(getattr(self, "_strategy_auto_restart_attempt", 0) or 0) + 1
+        self._strategy_auto_restart_last_reason = str(stop_reason or "stop")
+        delay_ms = max(1000, int(getattr(self, "_strategy_auto_restart_delay_ms", 3500) or 3500))
+        self._trace_runtime(
+            "auto_restart_scheduled",
+            reason=self._strategy_auto_restart_last_reason,
+            attempt=self._strategy_auto_restart_attempt,
+            delay_ms=delay_ms,
+        )
+        restart_timer.start(delay_ms)
+
+    def _on_strategy_auto_restart_timeout(self):
+        if not bool(getattr(self, "_strategy_auto_restart_enabled", False)):
+            return
+        if bool(getattr(self, "_strategy_state", None) and self._strategy_state.is_running):
+            self._strategy_auto_restart_pending = False
+            self._strategy_auto_restart_attempt = 0
+            return
+        if bool(getattr(self, "_strategy_manual_stop_requested", False)):
+            self._strategy_auto_restart_pending = False
+            self._strategy_auto_restart_attempt = 0
+            return
+        if bool(
+            self._strategy_cycle_busy
+            or self._strategy_worker is not None
+            or self._strategy_force_close_worker is not None
+            or self._strategy_reconcile_worker is not None
+            or self._strategy_emergency_close_worker is not None
+        ):
+            self._schedule_strategy_auto_restart("busy")
+            return
+
+        self._trace_runtime(
+            "auto_restart_attempt",
+            reason=self._strategy_auto_restart_last_reason,
+            attempt=self._strategy_auto_restart_attempt,
+        )
+        self._start_strategy_loop()
+        if bool(getattr(self, "_strategy_state", None) and self._strategy_state.is_running):
+            self._trace_runtime("auto_restart_success", attempt=self._strategy_auto_restart_attempt)
+            self._strategy_auto_restart_pending = False
+            self._strategy_auto_restart_attempt = 0
+            return
+        self._trace_runtime("auto_restart_retry_wait", attempt=self._strategy_auto_restart_attempt)
+        self._schedule_strategy_auto_restart("start_rejected")
 
     def _clear_entry_target_lock(self, reason=None):
         was_locked = self._strategy_entry_target_lock_qty is not None
@@ -410,6 +518,16 @@ class SpreadStrategyRuntimeLifecycleMixin:
                 self._clear_strategy_status()
                 self._update_strategy_state_label()
             return
+        if code == "entry_quote_stale":
+            stale_indexes = self._runtime_entry_stale_quote_indexes()
+            if not stale_indexes:
+                self._clear_strategy_status()
+                self._update_strategy_state_label()
+                return
+            age = max(0.0, time.monotonic() - float(self._strategy_notice_ts or 0.0))
+            if age >= 4.0:
+                self._update_strategy_state_label()
+            return
         if code not in {"step_miss", "recoverable_retry"}:
             return
 
@@ -437,6 +555,49 @@ class SpreadStrategyRuntimeLifecycleMixin:
 
     def _mark_strategy_submit(self):
         self._strategy_last_submit_ts = time.monotonic()
+
+    def _arm_entry_cooldown_after_exit(self):
+        cooldown_ms = float(getattr(self, "COOLDOWN_AFTER_EXIT_MS", 0.0) or 0.0)
+        if cooldown_ms <= 0:
+            self._strategy_entry_cooldown_until_ts = 0.0
+            return
+        until_ts = time.monotonic() + (cooldown_ms / 1000.0)
+        self._strategy_entry_cooldown_until_ts = float(until_ts)
+        self._trace_runtime("entry_cooldown_armed", cooldown_ms=f"{cooldown_ms:.0f}")
+
+    def _apply_strategy_signal_hysteresis(self):
+        state = getattr(self, "_strategy_state", None)
+        if state is None:
+            return
+
+        now_ts = time.monotonic()
+        phase = str(getattr(state, "phase", "") or "").strip().lower()
+        entry_hold_sec = max(0.0, float(getattr(self, "ENTRY_SIGNAL_HOLD_MS", 0.0) or 0.0) / 1000.0)
+        exit_hold_sec = max(0.0, float(getattr(self, "EXIT_SIGNAL_HOLD_MS", 0.0) or 0.0) / 1000.0)
+        cooldown_until = float(getattr(self, "_strategy_entry_cooldown_until_ts", 0.0) or 0.0)
+
+        if phase == "entry_signal":
+            if now_ts < cooldown_until:
+                state.phase = "wait_entry"
+                self._strategy_entry_signal_since_ts = 0.0
+            else:
+                if float(getattr(self, "_strategy_entry_signal_since_ts", 0.0) or 0.0) <= 0.0:
+                    self._strategy_entry_signal_since_ts = now_ts
+                age = now_ts - float(self._strategy_entry_signal_since_ts or 0.0)
+                if age < entry_hold_sec:
+                    state.phase = "wait_entry"
+        else:
+            self._strategy_entry_signal_since_ts = 0.0
+
+        phase = str(getattr(state, "phase", "") or "").strip().lower()
+        if phase == "exit_signal":
+            if float(getattr(self, "_strategy_exit_signal_since_ts", 0.0) or 0.0) <= 0.0:
+                self._strategy_exit_signal_since_ts = now_ts
+            age = now_ts - float(self._strategy_exit_signal_since_ts or 0.0)
+            if age < exit_hold_sec:
+                state.phase = "wait_exit"
+        else:
+            self._strategy_exit_signal_since_ts = 0.0
 
     def _expected_direction_for_leg(self, index):
         idx = int(index) if index in {1, 2} else None

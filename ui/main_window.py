@@ -20,6 +20,9 @@ from core.exchange.catalog import get_exchange_meta, normalize_exchange_code
 from core.i18n import get_language_manager, tr
 from core.utils.logger import get_logger
 from core.utils.thread_pool import ThreadManager
+from features.spread_sniping.services.overnight_report_recorder import (
+    OvernightReportRecorder,
+)
 from ui.styles import get_theme_manager, theme_color
 from ui.styles.dark_theme import get_dark_theme_stylesheet
 from ui.tabs.exchanges_tab import ExchangesTab
@@ -42,6 +45,7 @@ class MainWindow(QMainWindow):
         self._shutdown_poll_timer = None
         self._shutdown_thread = None
         self._shutdown_done = False
+        self._overnight_recorder = None
         self.language_manager = get_language_manager()
         self.theme_manager = get_theme_manager()
         self.settings_manager = SettingsManager()
@@ -94,6 +98,20 @@ class MainWindow(QMainWindow):
 
         self._apply_theme()
         self._retranslate_ui()
+        self._start_overnight_recorder()
+
+    def _start_overnight_recorder(self):
+        if self._overnight_recorder is not None:
+            return
+        try:
+            self._overnight_recorder = OvernightReportRecorder(
+                spread_tab=self.spread_sniping_tab,
+                status_bar=self.status_bar,
+                parent=self,
+            )
+        except Exception:
+            logger.exception("Не удалось запустить recorder ночной статистики")
+            self._overnight_recorder = None
 
     def _create_top_controls(self, parent_layout):
         top_row = QHBoxLayout()
@@ -414,6 +432,9 @@ class MainWindow(QMainWindow):
 
     def _begin_shutdown(self):
         try:
+            if self._overnight_recorder is not None:
+                self._overnight_recorder.stop(reason="shutdown")
+
             if hasattr(self, "status_bar") and self.status_bar is not None:
                 self.status_bar.stop_background_tasks()
 

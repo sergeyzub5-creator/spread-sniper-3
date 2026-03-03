@@ -358,6 +358,8 @@ class SpreadRuntimeService:
         max_slippage_pct=0.02,
         buy_best_price_hint=None,
         sell_best_price_hint=None,
+        preferred_first_exchange=None,
+        adaptive_first_reason=None,
     ):
         step_action = str(action or "").strip().lower()
         requested_qty = float(qty or 0.0)
@@ -381,6 +383,16 @@ class SpreadRuntimeService:
             "side": "buy" if sell_first else "sell",
             "best_price_hint": buy_best_price_hint if sell_first else sell_best_price_hint,
         }
+        preferred_name = str(preferred_first_exchange or "").strip().lower()
+        execution_order_mode = "default"
+        first_name = str(first_leg.get("exchange") or "").strip().lower()
+        second_name = str(second_leg.get("exchange") or "").strip().lower()
+        if preferred_name and first_name and second_name and preferred_name != first_name and preferred_name == second_name:
+            first_leg, second_leg = second_leg, first_leg
+            first_name, second_name = second_name, first_name
+            execution_order_mode = "adaptive_swapped"
+        elif preferred_name and preferred_name == first_name:
+            execution_order_mode = "adaptive_default"
 
         def _extract_leg_timing(result, key):
             if not isinstance(result, dict):
@@ -507,6 +519,11 @@ class SpreadRuntimeService:
             "legs_dispatch_delta_sec": float(dispatch_delta_sec),
             "decision_to_first_dispatch_sec": float(decision_to_first_dispatch_sec),
             "decision_to_all_dispatched_sec": float(decision_to_all_dispatched_sec),
+            "first_exchange": first_leg.get("exchange"),
+            "second_exchange": second_leg.get("exchange"),
+            "preferred_first_exchange": str(preferred_first_exchange or "").strip(),
+            "adaptive_first_reason": str(adaptive_first_reason or "").strip(),
+            "execution_order_mode": execution_order_mode,
         }
 
         def _with_timing(payload):

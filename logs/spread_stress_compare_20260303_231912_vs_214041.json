@@ -1,0 +1,95 @@
+{
+  "before": {
+    "report_path": "logs/spread_stress_report_20260303_214041.json",
+    "run_started_at": "2026-03-03T18:40:41Z",
+    "run_finished_at": "2026-03-03T18:42:45Z",
+    "trades_total": 2,
+    "trades_ok": 2,
+    "entry_ok": 1,
+    "exit_ok": 1,
+    "net_exposure_time_sec": {
+      "p50": 2.1881461500015575,
+      "p95": 2.2737449249951167,
+      "p99": 2.2813537049945443,
+      "max": 2.2832558999944013
+    },
+    "send_ack_p95_sec": 2.1564951899934384,
+    "submit_total_p95_sec": 2.254394829996454,
+    "panic_unwind_used_trades": 0,
+    "panic_unwind_pct_of_trades": 0.0,
+    "panic_unwind_reasons": {},
+    "first_exchange_distribution_report": {
+      "Bitget": 2
+    },
+    "avg_hold_time_sec_entry_to_exit": 11.0,
+    "hold_time_samples_sec": [
+      11.0
+    ]
+  },
+  "after": {
+    "report_path": "logs/spread_stress_report_20260303_231912.json",
+    "run_started_at": "2026-03-03T20:19:12Z",
+    "run_finished_at": "2026-03-03T20:39:16Z",
+    "trades_total": 1,
+    "trades_ok": 1,
+    "entry_ok": 1,
+    "exit_ok": 0,
+    "net_exposure_time_sec": {
+      "p50": 2.520688499993412,
+      "p95": 2.520688499993412,
+      "p99": 2.520688499993412,
+      "max": 2.520688499993412
+    },
+    "send_ack_p95_sec": 2.485040734994982,
+    "submit_total_p95_sec": 2.502160415000253,
+    "panic_unwind_used_trades": 0,
+    "panic_unwind_pct_of_trades": 0.0,
+    "panic_unwind_reasons": {},
+    "first_exchange_distribution_report": {
+      "Bitget": 1
+    },
+    "avg_hold_time_sec_entry_to_exit": null,
+    "hold_time_samples_sec": []
+  },
+  "after_trace": {
+    "trace_counts": {
+      "strategy.runtime_init": 1,
+      "selection.set_exchange": 2,
+      "pairs.load_start": 2,
+      "pairs.load_skip": 2,
+      "selection.set_pair": 2,
+      "strategy.qty_quantized": 5710,
+      "pairs.load_done": 2,
+      "pairs.load_finished": 2,
+      "strategy.start_click": 1,
+      "strategy.session_start": 1,
+      "strategy.started": 1,
+      "strategy.step_submit": 1,
+      "strategy.step_result_ok": 1,
+      "strategy.refresh_exchange_state": 3,
+      "strategy.step_finished": 1,
+      "strategy.ack_mode_changed": 1,
+      "strategy.ack_guard_block_entry": 1,
+      "strategy.loop_gate_emergency_candidate": 1,
+      "strategy.stopped": 1,
+      "strategy.emergency_close_submit": 1,
+      "strategy.status": 3,
+      "strategy.emergency_close_result_ok": 1,
+      "strategy.session_finish": 1,
+      "strategy.emergency_close_finished": 1,
+      "strategy.force_close_skip": 1
+    },
+    "entry_submits": 1,
+    "entry_blocked_total": 0,
+    "entry_blocked_by_reason": {},
+    "entry_blocked_pct_of_potential": 0.0,
+    "potential_entry_attempts": 1,
+    "first_exchange_trace": {
+      "Bitget": 1
+    },
+    "execution_order_mode": {
+      "default": 1
+    },
+    "adaptive_first_leg_reason": {}
+  }
+}
