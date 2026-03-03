@@ -36,6 +36,32 @@ class BaseExchange(QObject):
         self._last_balance_refresh_ts = 0.0
 
     @staticmethod
+    def _safe_emit(signal, *args):
+        try:
+            signal.emit(*args)
+        except RuntimeError:
+            # QObject can be deleted while background task is finishing.
+            pass
+
+    def _emit_connected(self):
+        self._safe_emit(self.connected, self.name)
+
+    def _emit_disconnected(self):
+        self._safe_emit(self.disconnected, self.name)
+
+    def _emit_error(self, message):
+        self._safe_emit(self.error, self.name, message)
+
+    def _emit_balance_updated(self):
+        self._safe_emit(self.balance_updated, self.name, self.balance)
+
+    def _emit_positions_updated(self):
+        self._safe_emit(self.positions_updated, self.name, self.positions)
+
+    def _emit_pnl_updated(self):
+        self._safe_emit(self.pnl_updated, self.name, self.pnl)
+
+    @staticmethod
     def _normalize_symbol(value):
         text = str(value or "").strip().upper()
         if not text:
@@ -122,8 +148,8 @@ class BaseExchange(QObject):
 
         self.positions = list(positions or [])
         self.pnl = sum(float(pos.get("pnl", 0.0) or 0.0) for pos in self.positions)
-        self.positions_updated.emit(self.name, self.positions)
-        self.pnl_updated.emit(self.name, self.pnl)
+        self._emit_positions_updated()
+        self._emit_pnl_updated()
 
         fetch_balance = getattr(self, "_fetch_balance", None)
         if callable(fetch_balance):
@@ -136,7 +162,7 @@ class BaseExchange(QObject):
                 balance = fetch_balance()
                 if balance is not None:
                     self.balance = float(balance or 0.0)
-                    self.balance_updated.emit(self.name, self.balance)
+                    self._emit_balance_updated()
                     self._last_balance_refresh_ts = now
 
         return True

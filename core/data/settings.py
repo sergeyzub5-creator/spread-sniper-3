@@ -98,4 +98,15 @@ class SettingsManager:
                 continue
             settings_key = self.SPREAD_STRATEGY_KEY_TMPL.format(name=name)
             result[name] = self.get_value(settings_key, defaults[key])
+
+        # Backward compatibility: legacy slippage value was stored in bps.
+        if "max_slippage_pct" in defaults:
+            new_key = self.SPREAD_STRATEGY_KEY_TMPL.format(name="max_slippage_pct")
+            old_key = self.SPREAD_STRATEGY_KEY_TMPL.format(name="max_slippage_bps")
+            if (not self.settings.contains(new_key)) and self.settings.contains(old_key):
+                legacy_raw = self.get_value(old_key, None)
+                try:
+                    result["max_slippage_pct"] = float(legacy_raw) / 100.0
+                except (TypeError, ValueError):
+                    result["max_slippage_pct"] = defaults["max_slippage_pct"]
         return result

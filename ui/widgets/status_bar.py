@@ -100,6 +100,12 @@ class NetworkStatusBar(QFrame):
         self.retranslate_ui()
         self._trigger_network_check()
 
+    def stop_background_tasks(self):
+        if hasattr(self, "clock_timer") and self.clock_timer is not None:
+            self.clock_timer.stop()
+        if hasattr(self, "network_timer") and self.network_timer is not None:
+            self.network_timer.stop()
+
     def _update_clock(self):
         self.time_label.setText(datetime.now().strftime("%H:%M:%S"))
 

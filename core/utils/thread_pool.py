@@ -45,6 +45,8 @@ class ThreadManager:
             cls._instance = super().__new__(cls)
             cls._instance.pool = QThreadPool()
             cls._instance.pool.setMaxThreadCount(4)
+            # Avoid keeping idle worker threads alive for long after app shutdown.
+            cls._instance.pool.setExpiryTimeout(150)
         return cls._instance
 
     def start(self, worker):

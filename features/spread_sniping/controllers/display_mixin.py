@@ -2,6 +2,11 @@ from core.i18n import tr
 
 
 class SpreadDisplayMixin:
+    def _trace_display(self, event, **fields):
+        trace = getattr(self, "_trace", None)
+        if callable(trace):
+            trace(f"display.{event}", **fields)
+
     @staticmethod
     def _to_float(value):
         try:
@@ -187,13 +192,21 @@ class SpreadDisplayMixin:
         if not getattr(self, "_spread_armed", False):
             return
         self._spread_armed = False
+        self._trace_display("spread_disarmed")
         self._refresh_spread_display()
 
     def _on_spread_select_clicked(self):
         state = self._calculate_spread_state()
         if state.get("percent") is None:
+            self._trace_display("spread_arm_skip", reason="no_spread_data")
             return
         self._spread_armed = True
+        self._trace_display(
+            "spread_armed",
+            spread_pct=state.get("percent"),
+            cheap_index=state.get("cheap_index"),
+            expensive_index=state.get("expensive_index"),
+        )
         self._refresh_spread_display()
 
     def _set_spread_frame_mode(self, mode):

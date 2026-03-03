@@ -1,4 +1,6 @@
-from PySide6.QtCore import Qt
+import threading
+
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -17,13 +19,15 @@ from core.exchange import ExchangeManager, create_exchange
 from core.exchange.catalog import get_exchange_meta, normalize_exchange_code
 from core.i18n import get_language_manager, tr
 from core.utils.logger import get_logger
+from core.utils.thread_pool import ThreadManager
 from ui.styles import get_theme_manager, theme_color
 from ui.styles.dark_theme import get_dark_theme_stylesheet
 from ui.tabs.exchanges_tab import ExchangesTab
 from ui.tabs.spread_design_lab_tab import SpreadDesignLabTab
 from ui.tabs.spread_sniping_tab import SpreadSnipingTab
-from ui.utils import ButtonSpamGuard
+from ui.utils import ButtonSpamGuard, InputFocusGuard
 from ui.widgets.brand_header import NeonLogoWidget
+from ui.widgets.startup_splash import ShutdownSplash
 from ui.widgets.status_bar import NetworkStatusBar
 
 logger = get_logger(__name__)
@@ -32,14 +36,22 @@ logger = get_logger(__name__)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._is_closing = False
+        self._close_ready = False
+        self._shutdown_splash = None
+        self._shutdown_poll_timer = None
+        self._shutdown_thread = None
+        self._shutdown_done = False
         self.language_manager = get_language_manager()
         self.theme_manager = get_theme_manager()
         self.settings_manager = SettingsManager()
         self.fast_trade_mode = False
         self._button_spam_guard = ButtonSpamGuard(cooldown_ms=220, parent=self)
+        self._input_focus_guard = InputFocusGuard(parent=self)
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self._button_spam_guard)
+            app.installEventFilter(self._input_focus_guard)
 
         self._load_ui_preferences()
 
@@ -71,6 +83,7 @@ class MainWindow(QMainWindow):
 
         self.spread_design_lab_tab = SpreadDesignLabTab()
         self.tabs.addTab(self.spread_design_lab_tab, tr("tab.test"))
+        self.tabs.setCurrentWidget(self.spread_sniping_tab)
 
         self.status_bar = NetworkStatusBar()
         layout.addWidget(self.status_bar)
@@ -304,6 +317,8 @@ class MainWindow(QMainWindow):
             self.spread_design_lab_tab.retranslate_ui()
         if hasattr(self, "status_bar"):
             self.status_bar.retranslate_ui()
+        if self._shutdown_splash is not None:
+            self._shutdown_splash.retranslate_ui()
 
     def _on_exchange_added(self, name, exchange_type, params):
         type_code = normalize_exchange_code(exchange_type)
@@ -384,3 +399,85 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_header_side_widths()
+
+    def _show_shutdown_splash(self):
+        if self._shutdown_splash is None:
+            self._shutdown_splash = ShutdownSplash()
+        self._shutdown_splash.start()
+
+    def _remove_global_event_filters(self):
+        app = QApplication.instance()
+        if app is not None and hasattr(self, "_button_spam_guard"):
+            app.removeEventFilter(self._button_spam_guard)
+        if app is not None and hasattr(self, "_input_focus_guard"):
+            app.removeEventFilter(self._input_focus_guard)
+
+    def _begin_shutdown(self):
+        try:
+            if hasattr(self, "status_bar") and self.status_bar is not None:
+                self.status_bar.stop_background_tasks()
+
+            if hasattr(self, "spread_sniping_tab"):
+                self.spread_sniping_tab._stop_all_quote_streams(wait=True)
+                self.spread_sniping_tab._shutdown_strategy_runtime()
+
+            if hasattr(self, "exchange_manager"):
+                # Must run in GUI thread: shutdown touches QTimer/signal wiring.
+                self.exchange_manager.shutdown(wait_for_tasks=False)
+        except Exception:
+            logger.exception("Ошибка корректного завершения приложения")
+
+        self._shutdown_done = False
+        if self._shutdown_thread is None or not self._shutdown_thread.is_alive():
+            self._shutdown_thread = threading.Thread(
+                target=self._run_shutdown_worker,
+                name="app-shutdown-worker",
+                daemon=True,
+            )
+            self._shutdown_thread.start()
+
+        if self._shutdown_poll_timer is None:
+            self._shutdown_poll_timer = QTimer(self)
+            self._shutdown_poll_timer.setInterval(80)
+            self._shutdown_poll_timer.timeout.connect(self._poll_shutdown_completion)
+        self._shutdown_poll_timer.start()
+
+    def _run_shutdown_worker(self):
+        try:
+            # Background wait only; no Qt object operations here.
+            ThreadManager().wait_for_done()
+        except Exception:
+            logger.exception("Ошибка корректного завершения приложения")
+        finally:
+            self._shutdown_done = True
+
+    def _poll_shutdown_completion(self):
+        if not self._shutdown_done:
+            return
+
+        if self._shutdown_poll_timer is not None:
+            self._shutdown_poll_timer.stop()
+
+        self._remove_global_event_filters()
+        if self._shutdown_splash is not None:
+            self._shutdown_splash.finish()
+        self._close_ready = True
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def closeEvent(self, event):
+        if self._close_ready:
+            super().closeEvent(event)
+            return
+        if self._is_closing:
+            event.ignore()
+            return
+
+        self._is_closing = True
+        event.ignore()
+        self.hide()
+        self._show_shutdown_splash()
+        QApplication.processEvents()
+        QTimer.singleShot(180, self._begin_shutdown)

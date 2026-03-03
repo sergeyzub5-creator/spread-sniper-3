@@ -44,10 +44,10 @@ class SpreadThemeMixin:
                 color: {c_primary};
                 border: 1px solid {c_capsule_border};
                 border-radius: 22px;
-                min-height: 44px;
-                font-size: 13px;
+                min-height: 40px;
+                font-size: 12px;
                 font-weight: 700;
-                padding: 8px 12px;
+                padding: 6px 10px;
             }}
             QPushButton#exchangeSelector:hover {{
                 border-color: {c_accent};
@@ -89,9 +89,9 @@ class SpreadThemeMixin:
                 color: {c_primary};
                 border: 1px solid {c_capsule_border};
                 border-radius: 14px;
-                min-height: 32px;
-                padding: 6px 10px;
-                font-size: 12px;
+                min-height: 30px;
+                padding: 5px 9px;
+                font-size: 11px;
                 font-weight: 600;
             }}
             QLineEdit#pairSelector:hover {{
@@ -346,4 +346,3 @@ class SpreadThemeMixin:
             except ValueError:
                 return color
         return color
-

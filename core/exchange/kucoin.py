@@ -140,19 +140,19 @@ class KuCoinExchange(BaseExchange):
 
         if not self.api_key or not self.api_secret or not self.api_passphrase:
             msg = "Для KuCoin нужны API ключ, API секрет и пароль API"
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
         timestamp = self._request("GET", "/api/v1/timestamp")
         if not timestamp:
-            self.error.emit(self.name, "KuCoin недоступна")
+            self._emit_error("KuCoin недоступна")
             return False
 
         balance = self._fetch_balance()
         positions = self._fetch_positions()
         if balance is None or positions is None:
-            self.error.emit(self.name, "Ошибка авторизации KuCoin")
+            self._emit_error("Ошибка авторизации KuCoin")
             return False
 
         self.balance = balance
@@ -160,16 +160,16 @@ class KuCoinExchange(BaseExchange):
         self.pnl = sum(pos.get("pnl", 0.0) for pos in self.positions)
         self.is_connected = True
 
-        self.connected.emit(self.name)
-        self.balance_updated.emit(self.name, self.balance)
-        self.positions_updated.emit(self.name, self.positions)
-        self.pnl_updated.emit(self.name, self.pnl)
+        self._emit_connected()
+        self._emit_balance_updated()
+        self._emit_positions_updated()
+        self._emit_pnl_updated()
         logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
-        self.disconnected.emit(self.name)
+        self._emit_disconnected()
         logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
@@ -177,4 +177,5 @@ class KuCoinExchange(BaseExchange):
 
     def unsubscribe_price(self, symbol):
         logger.info("%s отписка от %s", self.name, symbol)
+
 

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from core.exchange.catalog import get_exchange_meta
 from core.i18n import tr
+from core.utils.logger import get_logger
 from features.exchanges.controllers import ExchangesClosePositionsMixin, ExchangesPanelsMixin
 from ui.styles import theme_color
 
@@ -20,6 +21,7 @@ class ExchangesTab(ExchangesPanelsMixin, ExchangesClosePositionsMixin, QWidget):
 
     def __init__(self, exchange_manager, parent=None):
         super().__init__(parent)
+        self._trace_logger = get_logger("ui.exchanges.trace")
         self.exchange_manager = exchange_manager
         self.exchange_panels = {}
         self.fast_trade_mode = False
@@ -61,7 +63,7 @@ class ExchangesTab(ExchangesPanelsMixin, ExchangesClosePositionsMixin, QWidget):
         self.add_btn = QPushButton(tr("exchanges.add_exchange"))
         self.add_btn.setMinimumWidth(140)
         self.add_btn.setStyleSheet(self._soft_button_style("primary", bold=True))
-        self.add_btn.clicked.connect(self._add_new_panel)
+        self.add_btn.clicked.connect(self._on_add_clicked)
         controls.addWidget(self.add_btn)
         controls.addStretch()
 
@@ -71,17 +73,17 @@ class ExchangesTab(ExchangesPanelsMixin, ExchangesClosePositionsMixin, QWidget):
         self.connect_all_btn = QPushButton(tr("exchanges.connect_all"))
         self.connect_all_btn.setMinimumWidth(130)
         self.connect_all_btn.setStyleSheet(self._soft_button_style("success"))
-        self.connect_all_btn.clicked.connect(self._connect_all)
+        self.connect_all_btn.clicked.connect(self._on_connect_all_clicked)
 
         self.disconnect_all_btn = QPushButton(tr("exchanges.disconnect_all"))
         self.disconnect_all_btn.setMinimumWidth(130)
         self.disconnect_all_btn.setStyleSheet(self._soft_button_style("danger"))
-        self.disconnect_all_btn.clicked.connect(self._disconnect_all)
+        self.disconnect_all_btn.clicked.connect(self._on_disconnect_all_clicked)
 
         self.close_all_positions_btn = QPushButton(f"\u26A0 {tr('action.close_all_positions')}")
         self.close_all_positions_btn.setMinimumWidth(170)
         self.close_all_positions_btn.setStyleSheet(self._soft_button_style("warning", bold=True))
-        self.close_all_positions_btn.clicked.connect(self._close_all_positions)
+        self.close_all_positions_btn.clicked.connect(self._on_close_all_positions_clicked)
 
         connect_buttons.addWidget(self.connect_all_btn)
         connect_buttons.addWidget(self.disconnect_all_btn)
@@ -236,3 +238,32 @@ class ExchangesTab(ExchangesPanelsMixin, ExchangesClosePositionsMixin, QWidget):
                 tr("exchanges.new_connection_title", title=meta["title"])
             )
 
+    def _trace(self, event, **fields):
+        logger = getattr(self, "_trace_logger", None)
+        if logger is None:
+            return
+        details = " | ".join(
+            f"{key}={value}"
+            for key, value in fields.items()
+            if value is not None and str(value).strip() != ""
+        )
+        if details:
+            logger.info("[TRACE] exchanges.%s | %s", str(event or "event"), details)
+        else:
+            logger.info("[TRACE] exchanges.%s", str(event or "event"))
+
+    def _on_add_clicked(self):
+        self._trace("add_click")
+        self._add_new_panel()
+
+    def _on_connect_all_clicked(self):
+        self._trace("connect_all_click", panels=len(self.exchange_panels))
+        self._connect_all()
+
+    def _on_disconnect_all_clicked(self):
+        self._trace("disconnect_all_click", panels=len(self.exchange_panels))
+        self._disconnect_all()
+
+    def _on_close_all_positions_clicked(self):
+        self._trace("close_all_positions_click", panels=len(self.exchange_panels))
+        self._close_all_positions()

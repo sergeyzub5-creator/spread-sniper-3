@@ -10,6 +10,11 @@ from ui.widgets.exchange_badge import build_exchange_icon
 
 
 class SpreadSelectionStateMixin:
+    def _trace_selection(self, event, **fields):
+        trace = getattr(self, "_trace", None)
+        if callable(trace):
+            trace(f"selection.{event}", **fields)
+
     def _set_spread_pending_selection_safe(self):
         setter = getattr(self, "_set_spread_pending_selection", None)
         if callable(setter):
@@ -75,6 +80,13 @@ class SpreadSelectionStateMixin:
         new_name = str(name).strip() if name else None
         old_name = column.selected_exchange
         column.selected_exchange = new_name
+        self._trace_selection(
+            "set_exchange",
+            index=index,
+            old=old_name or "",
+            new=new_name or "",
+            force_reload=bool(force_reload),
+        )
 
         if old_name != new_name:
             self._clear_selected_pair(index)
@@ -123,6 +135,7 @@ class SpreadSelectionStateMixin:
         if column is None:
             return
 
+        old_pair = column.selected_pair
         new_pair = self._normalize_pair(pair)
         if column.selected_pair != new_pair:
             clear_own_order = getattr(self, "_clear_own_order", None)
@@ -135,6 +148,12 @@ class SpreadSelectionStateMixin:
         self._refresh_spread_display_safe()
         self._refresh_trade_control_safe(index)
         self._persist_spread_selection_safe(index)
+        self._trace_selection(
+            "set_pair",
+            index=index,
+            old=old_pair or "",
+            new=new_pair or "",
+        )
 
     def _get_selected_pair(self, index):
         column = self._column(index)
@@ -177,16 +196,27 @@ class SpreadSelectionStateMixin:
                 btn.setIcon(QIcon())
             btn.setIconSize(QSize(24, 24))
 
+        resize_capsules = getattr(self, "_update_selector_pair_capsule_widths", None)
+        if callable(resize_capsules):
+            resize_capsules()
+
     def _open_exchange_menu(self, index):
         self._set_spread_pending_selection_safe()
 
         rows = self._connected_rows()
         if not rows:
+            self._trace_selection("open_menu_skipped", index=index, reason="no_connected_exchanges")
             return
 
         column = self._column(index)
         if column is None:
             return
+        self._trace_selection(
+            "open_menu",
+            index=index,
+            current=column.selected_exchange or "",
+            rows=len(rows),
+        )
 
         dialog = ConnectedExchangePickerDialog(
             rows,
@@ -195,14 +225,17 @@ class SpreadSelectionStateMixin:
             parent=self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
+            self._trace_selection("menu_cancelled", index=index)
             return
 
         if dialog.reset_requested:
+            self._trace_selection("menu_reset", index=index, old=column.selected_exchange or "")
             self._set_selected_exchange(index, None)
             return
 
         chosen_name = dialog.selected_name
         if chosen_name:
+            self._trace_selection("menu_selected", index=index, chosen=chosen_name)
             # Even when selecting the same exchange, force pairs refresh.
             self._set_selected_exchange(index, chosen_name, force_reload=True)
 
@@ -281,4 +314,3 @@ class SpreadSelectionStateMixin:
             column.pair_edit_active = False
             self._update_pair_input_mode(index)
             self._sync_quote_stream(index)
-

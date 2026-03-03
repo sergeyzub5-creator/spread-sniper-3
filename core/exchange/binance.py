@@ -1,10 +1,11 @@
-import hashlib
+﻿import hashlib
 import hmac
 import math
 import time
 from urllib.parse import urlencode
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from core.exchange.base import BaseExchange
 from core.utils.logger import get_logger
@@ -22,6 +23,9 @@ class BinanceExchange(BaseExchange):
         self.rest_url = "https://demo-fapi.binance.com" if testnet else "https://fapi.binance.com"
         self.timeout = 10
         self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=32, pool_maxsize=32, max_retries=0, pool_block=False)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         if api_key:
             self.session.headers.update({"X-MBX-APIKEY": api_key})
         self.time_offset = 0
@@ -83,7 +87,7 @@ class BinanceExchange(BaseExchange):
         try:
             response = self.session.request(method, url, **request_kwargs)
         except requests.RequestException as exc:
-            self._last_api_error = f"{endpoint}: сеть ({exc})"
+            self._last_api_error = f"{endpoint}: СЃРµС‚СЊ ({exc})"
             logger.error("Binance %s %s ошибка сети: %s", method, endpoint, exc)
             return None
 
@@ -169,7 +173,7 @@ class BinanceExchange(BaseExchange):
         if not self.api_key or not self.api_secret:
             msg = "Для Binance нужны API ключ и API секрет"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
@@ -177,7 +181,7 @@ class BinanceExchange(BaseExchange):
         if self._request("GET", "/fapi/v1/time") is None:
             msg = "Binance недоступна или нет сети"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             return False
 
         balance = self._fetch_balance()
@@ -185,7 +189,7 @@ class BinanceExchange(BaseExchange):
         if balance is None or positions is None:
             msg = "Ошибка авторизации Binance"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             return False
 
         self.last_error = ""
@@ -194,16 +198,16 @@ class BinanceExchange(BaseExchange):
         self.pnl = sum(pos.get("pnl", 0.0) for pos in positions)
         self.is_connected = True
 
-        self.connected.emit(self.name)
-        self.balance_updated.emit(self.name, self.balance)
-        self.positions_updated.emit(self.name, self.positions)
-        self.pnl_updated.emit(self.name, self.pnl)
+        self._emit_connected()
+        self._emit_balance_updated()
+        self._emit_positions_updated()
+        self._emit_pnl_updated()
         logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
-        self.disconnected.emit(self.name)
+        self._emit_disconnected()
         logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
@@ -302,19 +306,19 @@ class BinanceExchange(BaseExchange):
     def open_min_test_position(self, symbol, direction):
         # TEMP: spread-tab market-entry check for order-book validation.
         if not self.is_connected:
-            raise RuntimeError("Binance: биржа не подключена")
+            raise RuntimeError("Binance: Р±РёСЂР¶Р° РЅРµ РїРѕРґРєР»СЋС‡РµРЅР°")
 
         side = str(direction or "").strip().lower()
         if side not in {"buy", "sell"}:
-            raise RuntimeError("Binance: неверное направление ордера")
+            raise RuntimeError("Binance: РЅРµРІРµСЂРЅРѕРµ РЅР°РїСЂР°РІР»РµРЅРёРµ РѕСЂРґРµСЂР°")
 
         normalized_symbol = self._normalize_symbol(symbol)
         if not normalized_symbol:
-            raise RuntimeError("Binance: не указана торговая пара")
+            raise RuntimeError("Binance: РЅРµ СѓРєР°Р·Р°РЅР° С‚РѕСЂРіРѕРІР°СЏ РїР°СЂР°")
 
         exchange_info = self._request("GET", "/fapi/v1/exchangeInfo", signed=False)
         if not isinstance(exchange_info, dict):
-            raise RuntimeError("Binance: не удалось получить параметры инструмента")
+            raise RuntimeError("Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РїР°СЂР°РјРµС‚СЂС‹ РёРЅСЃС‚СЂСѓРјРµРЅС‚Р°")
 
         symbol_info = None
         for row in exchange_info.get("symbols") or []:
@@ -323,11 +327,11 @@ class BinanceExchange(BaseExchange):
                 symbol_info = row
                 break
         if symbol_info is None:
-            raise RuntimeError(f"Binance: инструмент {normalized_symbol} не найден")
+            raise RuntimeError(f"Binance: РёРЅСЃС‚СЂСѓРјРµРЅС‚ {normalized_symbol} РЅРµ РЅР°Р№РґРµРЅ")
 
         status = str(symbol_info.get("status", "")).upper()
         if status and status != "TRADING":
-            raise RuntimeError(f"Binance: инструмент {normalized_symbol} недоступен для торговли")
+            raise RuntimeError(f"Binance: РёРЅСЃС‚СЂСѓРјРµРЅС‚ {normalized_symbol} РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ С‚РѕСЂРіРѕРІР»Рё")
 
         filters = symbol_info.get("filters") or []
         lot_min = self._to_float(
@@ -369,7 +373,7 @@ class BinanceExchange(BaseExchange):
 
         qty = lot_min if lot_min > 0 else lot_step
         if qty <= 0:
-            raise RuntimeError(f"Binance: не удалось определить минимальный объем для {normalized_symbol}")
+            raise RuntimeError(f"Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ РјРёРЅРёРјР°Р»СЊРЅС‹Р№ РѕР±СЉРµРј РґР»СЏ {normalized_symbol}")
 
         ticker = self._request(
             "GET",
@@ -384,11 +388,11 @@ class BinanceExchange(BaseExchange):
             if price <= 0:
                 price = self._to_float(ticker.get("price"), default=0.0)
         if not price or price <= 0:
-            raise RuntimeError("Binance: не удалось получить лучшую цену для LIMIT ордера")
+            raise RuntimeError("Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ Р»СѓС‡С€СѓСЋ С†РµРЅСѓ РґР»СЏ LIMIT РѕСЂРґРµСЂР°")
         if price_tick > 0:
             price = self._round_to_step(price, price_tick)
         if not price or price <= 0:
-            raise RuntimeError("Binance: рассчитанная цена LIMIT ордера некорректна")
+            raise RuntimeError("Binance: СЂР°СЃСЃС‡РёС‚Р°РЅРЅР°СЏ С†РµРЅР° LIMIT РѕСЂРґРµСЂР° РЅРµРєРѕСЂСЂРµРєС‚РЅР°")
 
         if min_notional > 0 and price and price > 0:
             notional_qty = min_notional / price
@@ -397,7 +401,7 @@ class BinanceExchange(BaseExchange):
         if lot_step > 0:
             qty = self._round_up_to_step(qty, lot_step)
         if lot_max > 0 and qty > lot_max:
-            raise RuntimeError("Binance: минимальный тестовый объем превышает допустимый максимум")
+            raise RuntimeError("Binance: РјРёРЅРёРјР°Р»СЊРЅС‹Р№ С‚РµСЃС‚РѕРІС‹Р№ РѕР±СЉРµРј РїСЂРµРІС‹С€Р°РµС‚ РґРѕРїСѓСЃС‚РёРјС‹Р№ РјР°РєСЃРёРјСѓРј")
 
         qty_str = self._format_to_step(qty, lot_step)
         price_str = self._format_to_step(price, price_tick)
@@ -418,8 +422,8 @@ class BinanceExchange(BaseExchange):
         if response is None:
             details = str(self._last_api_error or "").strip()
             if details:
-                raise RuntimeError(f"Binance: не удалось открыть тестовую позицию ({details})")
-            raise RuntimeError("Binance: не удалось открыть тестовую позицию")
+                raise RuntimeError(f"Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С‚РµСЃС‚РѕРІСѓСЋ РїРѕР·РёС†РёСЋ ({details})")
+            raise RuntimeError("Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С‚РµСЃС‚РѕРІСѓСЋ РїРѕР·РёС†РёСЋ")
 
         order_id = response.get("orderId")
         order_status = str(response.get("status") or "").upper()
@@ -469,7 +473,7 @@ class BinanceExchange(BaseExchange):
 
         payload = self._request("GET", "/fapi/v3/positionRisk", signed=True)
         if payload is None:
-            raise RuntimeError("Binance: не удалось получить позиции для закрытия")
+            raise RuntimeError("Binance: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РїРѕР·РёС†РёРё РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ")
 
         positions = []
         for row in payload:
@@ -487,8 +491,8 @@ class BinanceExchange(BaseExchange):
         if not positions:
             self.positions = []
             self.pnl = 0.0
-            self.positions_updated.emit(self.name, self.positions)
-            self.pnl_updated.emit(self.name, self.pnl)
+            self._emit_positions_updated()
+            self._emit_pnl_updated()
             return 0
 
         failed = []
@@ -516,14 +520,15 @@ class BinanceExchange(BaseExchange):
         positions_after = self._fetch_positions()
         if balance is not None:
             self.balance = balance
-            self.balance_updated.emit(self.name, self.balance)
+            self._emit_balance_updated()
         if positions_after is not None:
             self.positions = positions_after
             self.pnl = sum(pos.get("pnl", 0.0) for pos in positions_after)
-            self.positions_updated.emit(self.name, self.positions)
-            self.pnl_updated.emit(self.name, self.pnl)
+            self._emit_positions_updated()
+            self._emit_pnl_updated()
 
         if failed:
-            raise RuntimeError(f"Binance: не закрыты позиции {', '.join(sorted(set(failed)))}")
+            raise RuntimeError(f"Binance: РЅРµ Р·Р°РєСЂС‹С‚С‹ РїРѕР·РёС†РёРё {', '.join(sorted(set(failed)))}")
 
         return len(positions)
+

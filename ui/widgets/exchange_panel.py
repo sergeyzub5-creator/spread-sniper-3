@@ -15,8 +15,12 @@ from PySide6.QtWidgets import (
 
 from core.exchange.catalog import get_exchange_meta, normalize_exchange_code, requires_passphrase
 from core.i18n import tr
+from core.utils.logger import get_logger
 from ui.styles import theme_color
+from ui.utils import apply_stable_numeric_label, numeric_monospace_font
 from ui.widgets.exchange_badge import build_exchange_pixmap
+
+logger = get_logger(__name__)
 
 
 class StatusDot(QWidget):
@@ -265,6 +269,7 @@ class ExchangePanel(QFrame):
         fill, border = self._indicator_colors(indicator_color_key)
         self.status_indicator.set_colors(fill, border)
         self.status_indicator.setVisible(True)
+        self._apply_metric_width_stability()
 
     def show_status_message(
         self,
@@ -398,22 +403,22 @@ class ExchangePanel(QFrame):
         self.disconnect_btn = QPushButton(tr("action.disconnect"))
         self.disconnect_btn.setMinimumWidth(100)
         self.disconnect_btn.setStyleSheet(self._soft_button_style("danger"))
-        self.disconnect_btn.clicked.connect(lambda: self.disconnect_clicked.emit(self.exchange_name))
+        self.disconnect_btn.clicked.connect(self._on_disconnect_clicked)
 
         self.close_positions_btn = QPushButton(f"\u26A0 {tr('action.close_positions')}")
         self.close_positions_btn.setMinimumWidth(130)
         self.close_positions_btn.setStyleSheet(self._soft_button_style("warning"))
-        self.close_positions_btn.clicked.connect(lambda: self.close_positions_clicked.emit(self.exchange_name))
+        self.close_positions_btn.clicked.connect(self._on_close_positions_clicked)
 
         self.edit_btn = QPushButton(tr("action.edit"))
         self.edit_btn.setMinimumWidth(100)
         self.edit_btn.setStyleSheet(self._soft_button_style("warning"))
-        self.edit_btn.clicked.connect(lambda: self.set_edit_mode(True))
+        self.edit_btn.clicked.connect(self._on_edit_clicked)
 
         self.remove_btn = QPushButton(tr("action.remove"))
         self.remove_btn.setMinimumWidth(100)
         self.remove_btn.setStyleSheet(self._soft_button_style("secondary"))
-        self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.exchange_name))
+        self.remove_btn.clicked.connect(self._on_remove_clicked)
 
         self.cancel_btn = QPushButton(tr("action.cancel"))
         self.cancel_btn.setMinimumWidth(100)
@@ -431,6 +436,7 @@ class ExchangePanel(QFrame):
 
         self.setLayout(layout)
         self._update_passphrase_hint()
+        self._apply_metric_width_stability()
         self._update_ui_state()
 
     def _update_passphrase_hint(self):
@@ -452,6 +458,7 @@ class ExchangePanel(QFrame):
         self.remove_btn.setText(tr("action.remove"))
         self.cancel_btn.setText(tr("action.cancel"))
         self._update_passphrase_hint()
+        self._apply_metric_width_stability()
 
         if self.is_new:
             self.name_label.setText(tr("exchanges.new_connection_name"))
@@ -464,6 +471,34 @@ class ExchangePanel(QFrame):
     def set_edit_mode(self, edit_mode):
         self.edit_mode = edit_mode
         self._update_ui_state()
+
+    def _apply_metric_width_stability(self):
+        if not hasattr(self, "balance_label"):
+            return
+
+        self.balance_label.setFont(numeric_monospace_font(self.balance_label.font()))
+        self.pnl_label.setFont(numeric_monospace_font(self.pnl_label.font()))
+
+        balance_samples = [
+            tr("label.balance", value="999,999,999.99"),
+            tr("label.balance_empty"),
+        ]
+        pnl_samples = [
+            tr("label.pnl_positive", value="+999,999,999.99"),
+            tr("label.pnl", value="-999,999,999.99"),
+        ]
+        positions_samples = [
+            tr("label.positions", value="999"),
+            tr(
+                "label.positions",
+                value=f"{tr('label.long')} 999 | {tr('label.short')} 999",
+            ),
+            tr("label.positions_empty"),
+        ]
+
+        apply_stable_numeric_label(self.balance_label, balance_samples, extra_padding=22)
+        apply_stable_numeric_label(self.positions_label, positions_samples, extra_padding=22)
+        apply_stable_numeric_label(self.pnl_label, pnl_samples, extra_padding=22)
 
     def _update_ui_state(self):
         if self.is_connected:
@@ -563,10 +598,31 @@ class ExchangePanel(QFrame):
         self.positions_label.setStyleSheet(self._metric_capsule_style("text_primary", bold=True))
 
     def _on_cancel(self):
+        logger.info(
+            "[TRACE] exchange_panel.cancel_click | exchange=%s | is_new=%s",
+            self.exchange_name,
+            bool(self.is_new),
+        )
         if self.is_new:
             self.cancel_clicked.emit()
         else:
             self.set_edit_mode(False)
+
+    def _on_disconnect_clicked(self):
+        logger.info("[TRACE] exchange_panel.disconnect_click | exchange=%s", self.exchange_name)
+        self.disconnect_clicked.emit(self.exchange_name)
+
+    def _on_close_positions_clicked(self):
+        logger.info("[TRACE] exchange_panel.close_positions_click | exchange=%s", self.exchange_name)
+        self.close_positions_clicked.emit(self.exchange_name)
+
+    def _on_edit_clicked(self):
+        logger.info("[TRACE] exchange_panel.edit_click | exchange=%s", self.exchange_name)
+        self.set_edit_mode(True)
+
+    def _on_remove_clicked(self):
+        logger.info("[TRACE] exchange_panel.remove_click | exchange=%s", self.exchange_name)
+        self.remove_clicked.emit(self.exchange_name)
 
     def _on_testnet_changed(self, state):
         self.testnet = state == Qt.CheckState.Checked.value
@@ -583,16 +639,30 @@ class ExchangePanel(QFrame):
         self.show_status_message(message, "danger", "danger", emphasize=True)
 
     def _on_connect(self):
+        logger.info(
+            "[TRACE] exchange_panel.connect_click | exchange=%s | is_new=%s | edit_mode=%s",
+            self.exchange_name,
+            bool(self.is_new),
+            bool(self.edit_mode),
+        )
         api_key = self.api_key_input.text().strip()
         api_secret = self.api_secret_input.text().strip()
 
         if not api_key or not api_secret:
+            logger.info(
+                "[TRACE] exchange_panel.connect_rejected | exchange=%s | reason=required_keys",
+                self.exchange_name,
+            )
             if not self.edit_mode and not self.is_new:
                 self.set_edit_mode(True)
             self._show_input_error(tr("panel.error.required_keys"))
             return
 
         if not self._is_ascii(api_key) or not self._is_ascii(api_secret):
+            logger.info(
+                "[TRACE] exchange_panel.connect_rejected | exchange=%s | reason=non_ascii_key",
+                self.exchange_name,
+            )
             self._show_input_error(tr("panel.error.ascii_key"))
             return
 
@@ -605,9 +675,17 @@ class ExchangePanel(QFrame):
         if requires_passphrase(self.exchange_type):
             passphrase = self.passphrase_input.text().strip()
             if not passphrase:
+                logger.info(
+                    "[TRACE] exchange_panel.connect_rejected | exchange=%s | reason=required_passphrase",
+                    self.exchange_name,
+                )
                 self._show_input_error(tr("panel.error.required_passphrase"))
                 return
             if not self._is_ascii(passphrase):
+                logger.info(
+                    "[TRACE] exchange_panel.connect_rejected | exchange=%s | reason=non_ascii_passphrase",
+                    self.exchange_name,
+                )
                 self._show_input_error(tr("panel.error.ascii_passphrase"))
                 return
             params["api_passphrase"] = passphrase
@@ -615,10 +693,20 @@ class ExchangePanel(QFrame):
             passphrase = self.passphrase_input.text().strip()
             if passphrase:
                 if not self._is_ascii(passphrase):
+                    logger.info(
+                        "[TRACE] exchange_panel.connect_rejected | exchange=%s | reason=non_ascii_passphrase_optional",
+                        self.exchange_name,
+                    )
                     self._show_input_error(tr("panel.error.ascii_passphrase"))
                     return
                 params["api_passphrase"] = passphrase
 
+        logger.info(
+            "[TRACE] exchange_panel.connect_submit | exchange=%s | testnet=%s | passphrase=%s",
+            self.exchange_name,
+            bool(self.testnet),
+            bool(params.get("api_passphrase")),
+        )
         self.connect_btn.setEnabled(False)
         self.connect_clicked.emit(self.exchange_name, params)
 

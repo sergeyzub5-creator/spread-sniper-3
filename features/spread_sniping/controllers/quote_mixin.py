@@ -160,11 +160,11 @@ class SpreadQuoteMixin:
         if column and column.quote_frame is not None:
             column.quote_frame.setVisible(bool(visible))
 
-    def _stop_all_quote_streams(self):
+    def _stop_all_quote_streams(self, wait=False):
         for column in self._iter_columns():
-            self._stop_quote_stream(column.index)
+            self._stop_quote_stream(column.index, wait=wait)
 
-    def _stop_quote_stream(self, index):
+    def _stop_quote_stream(self, index, wait=False):
         column = self._column(index)
         if column is None:
             return
@@ -183,11 +183,17 @@ class SpreadQuoteMixin:
             for stream in streams.values():
                 if stream is None:
                     continue
-                stream.stop()
+                try:
+                    stream.stop(wait=wait)
+                except TypeError:
+                    stream.stop()
         else:
             stream = column.quote_stream
             if stream is not None:
-                stream.stop()
+                try:
+                    stream.stop(wait=wait)
+                except TypeError:
+                    stream.stop()
         column.quote_stream_state = None
 
     def _sync_quote_stream(self, index):
@@ -284,6 +290,9 @@ class SpreadQuoteMixin:
         if bid is None or ask is None:
             return
         self._set_quote_state(index, "live", bid=bid, ask=ask, bid_qty=bid_qty, ask_qty=ask_qty)
+        on_quote_live = getattr(self, "_on_runtime_quote_live", None)
+        if callable(on_quote_live):
+            on_quote_live(index)
 
     def _on_quote_tick(self, index, payload):
         column = self._column(index)
@@ -313,13 +322,19 @@ class SpreadQuoteMixin:
             return
 
         self._set_quote_state(index, "live", bid=bid, ask=ask, bid_qty=bid_qty, ask_qty=ask_qty)
+        on_quote_live = getattr(self, "_on_runtime_quote_live", None)
+        if callable(on_quote_live):
+            on_quote_live(index)
 
-    def _on_quote_stream_error(self, index):
+    def _on_quote_stream_error(self, index, error_text=""):
         column = self._column(index)
         if column is None:
             return
 
         if column.quote_stream_state is None:
             return
+        on_quote_error = getattr(self, "_on_runtime_quote_error", None)
+        if callable(on_quote_error):
+            on_quote_error(index, error_text)
         if column.quote_state != "live":
             self._set_quote_state(index, "loading")

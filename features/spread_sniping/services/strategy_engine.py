@@ -41,6 +41,7 @@ class SpreadStrategyEngine:
         ):
             return {
                 "percent": None,
+                "raw_edge_pct": None,
                 "effective_edge_pct": None,
                 "cheap_index": None,
                 "expensive_index": None,
@@ -63,8 +64,9 @@ class SpreadStrategyEngine:
             expensive_index = 2
             cheap_index = 1
 
+        raw_edge_pct = best_edge * 100.0
         percent = abs(best_edge) * 100.0
-        effective_edge_pct = max(best_edge * 100.0, 0.0)
+        effective_edge_pct = max(raw_edge_pct, 0.0)
         if effective_edge_pct <= 0.0:
             cheap_index = None
             expensive_index = None
@@ -80,23 +82,32 @@ class SpreadStrategyEngine:
         if target_qty is not None and step_qty is not None:
             step_qty = min(step_qty, target_qty)
 
-        has_hedged_position = float(st.active_hedged_size or 0.0) > 0.0
+        active_qty = float(st.active_hedged_size or 0.0)
+        has_hedged_position = active_qty > 0.0
+        has_target = target_qty is not None and target_qty > 0.0
+        need_entry_fill = has_target and (active_qty + 1e-12) < float(target_qty)
+
         signal = None
-        if has_hedged_position:
-            if effective_edge_pct <= float(cfg.exit_threshold_pct):
-                signal = "exit"
-                phase = "exit_signal"
-            else:
-                phase = "wait_exit"
-        else:
+        # Exit must work at any moment when there is an open hedge,
+        # even if entry target has not been fully collected yet.
+        if has_hedged_position and raw_edge_pct <= float(cfg.exit_threshold_pct):
+            signal = "exit"
+            phase = "exit_signal"
+        elif need_entry_fill:
+            # Keep accumulating while edge >= entry threshold until target is reached.
             if effective_edge_pct >= float(cfg.entry_threshold_pct):
                 signal = "entry"
                 phase = "entry_signal"
             else:
                 phase = "wait_entry"
+        elif has_hedged_position:
+            phase = "wait_exit"
+        else:
+            phase = "wait_entry"
 
         return {
             "percent": percent,
+            "raw_edge_pct": raw_edge_pct,
             "effective_edge_pct": effective_edge_pct,
             "cheap_index": cheap_index,
             "expensive_index": expensive_index,

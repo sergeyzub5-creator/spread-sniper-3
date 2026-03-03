@@ -21,12 +21,12 @@ class PlaceholderExchange(BaseExchange):
         self.is_connected = False
         title = get_exchange_meta(self.exchange_type)["title"]
         self.last_error = f"{title}: подключение пока не реализовано"
-        self.error.emit(self.name, self.last_error)
+        self._emit_error(self.last_error)
 
     def disconnect(self):
         self.is_connected = False
         self.last_error = ""
-        self.disconnected.emit(self.name)
+        self._emit_disconnected()
 
     def subscribe_price(self, symbol):
         return None
@@ -38,3 +38,4 @@ class PlaceholderExchange(BaseExchange):
         if self.last_error:
             return f"Ошибка: {self.last_error}"
         return super().get_status_text()
+

@@ -1,0 +1,27 @@
+{
+  "ts": "2026-03-03T18:42:54Z",
+  "phase": "done",
+  "elapsed_sec": 132.77864300001238,
+  "duration_sec": 120,
+  "strategy_started": true,
+  "running_now": false,
+  "status_text": "завершение теста",
+  "counters": {
+    "step_submit": 2,
+    "step_ok": 2,
+    "step_fail": 0,
+    "network_degraded": 0,
+    "network_resumed": 0,
+    "recoverable_retry": 0,
+    "step_miss": 0,
+    "leg_lost": 1,
+    "leg_lost_closed": 1,
+    "emergency_verify_failed": 0,
+    "forced_close_ok": 0,
+    "forced_close_fail": 0
+  },
+  "completed_trades": 2,
+  "snapshots": 124,
+  "inject_events": 1,
+  "report_path": "C:\\Users\\Разраб\\projektvscod\\logs\\spread_stress_report_20260303_214041.json"
+}

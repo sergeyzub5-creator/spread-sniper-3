@@ -2,6 +2,11 @@ from PySide6.QtCore import QModelIndex, QTimer, Qt
 
 
 class SpreadPairInputSessionMixin:
+    def _trace_pair_session(self, event, **fields):
+        trace = getattr(self, "_trace", None)
+        if callable(trace):
+            trace(f"pair_input.{event}", **fields)
+
     def _on_pair_text_edited(self, index, text):
         exchange_name = self._get_selected_exchange(index)
         if not exchange_name or exchange_name in self._pair_loading:
@@ -32,6 +37,7 @@ class SpreadPairInputSessionMixin:
             self._set_selected_pair(index, None)
             self._finish_pair_edit_session(index)
             self._update_pair_input_mode(index)
+            self._trace_pair_session("editing_finished_empty", index=index)
             return
 
         pairs = self._pairs_for_index(index)
@@ -40,6 +46,7 @@ class SpreadPairInputSessionMixin:
             edit.blockSignals(True)
             edit.setText(text)
             edit.blockSignals(False)
+            self._trace_pair_session("editing_finished_exact", index=index, pair=text)
         else:
             suggestions = self._build_suggestions(index, text)
             if suggestions:
@@ -48,8 +55,10 @@ class SpreadPairInputSessionMixin:
                 edit.setText(best)
                 edit.blockSignals(False)
                 self._set_selected_pair(index, best)
+                self._trace_pair_session("editing_finished_autofix", index=index, typed=text, chosen=best)
             else:
                 self._set_selected_pair(index, None)
+                self._trace_pair_session("editing_finished_no_match", index=index, typed=text)
 
         self._finish_pair_edit_session(index)
         self._update_pair_input_mode(index)
@@ -84,6 +93,7 @@ class SpreadPairInputSessionMixin:
         self._update_pair_input_mode(index)
         self._hide_all_pair_popups()
         edit.clearFocus()
+        self._trace_pair_session("chosen", index=index, pair=pair)
 
         QTimer.singleShot(0, lambda idx=index: self._clear_pair_accepting(idx))
 
@@ -123,6 +133,7 @@ class SpreadPairInputSessionMixin:
             return
 
         self._set_spread_pending_selection_safe()
+        self._trace_pair_session("field_clicked", index=index, selected_pair=column.selected_pair or "")
 
         for other in self._iter_columns():
             if other.index != index:
@@ -212,6 +223,12 @@ class SpreadPairInputSessionMixin:
 
         self._finish_pair_edit_session(index)
         self._update_pair_input_mode(index)
+        self._trace_pair_session(
+            "cancel_edit",
+            index=index,
+            restored_pair=restore_pair or "",
+            restored_text=restore_text,
+        )
         return True
 
     def _cancel_pair_input_sessions(self):
@@ -262,4 +279,3 @@ class SpreadPairInputSessionMixin:
             if self._contains_global_point(popup, global_pos):
                 return True
         return False
-

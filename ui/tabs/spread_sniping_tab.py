@@ -22,6 +22,7 @@ from features.spread_sniping.controllers import (
     SpreadQuoteMixin,
     SpreadSelectionMixin,
     SpreadStrategyMixin,
+    SpreadStrategyRuntimeMixin,
     SpreadThemeMixin,
 )
 from features.spread_sniping.models import SpreadColumnContext
@@ -35,6 +36,11 @@ from features.spread_sniping.services.spread_runtime_service import (
     SpreadRuntimeService,
 )
 from features.spread_sniping.services.strategy_engine import SpreadStrategyEngine
+from features.spread_sniping.services.strategy_execution_service import (
+    SpreadStrategyExecutionService,
+)
+from core.utils.logger import get_logger
+from ui.utils import apply_stable_numeric_label, numeric_monospace_font
 
 
 class SpreadSnipingTab(
@@ -42,6 +48,7 @@ class SpreadSnipingTab(
     SpreadDisplayMixin,
     SpreadSelectionMixin,
     SpreadQuoteMixin,
+    SpreadStrategyRuntimeMixin,
     SpreadStrategyMixin,
     QWidget,
 ):
@@ -63,7 +70,9 @@ class SpreadSnipingTab(
     MAX_SUGGESTIONS = 40
     POPULAR_SUGGESTIONS = 12
     COLUMN_WIDTH = 250
+    COLUMN_WIDTH_MIN = 180
     QUOTE_PANEL_WIDTH = 540
+    QUOTE_PANEL_WIDTH_MIN = 430
     SPREAD_VALUE_HEIGHT = 84
     SPREAD_VALUE_WIDTH = 250
     SUPPORTED_SPREAD_VARIANTS = (
@@ -74,6 +83,7 @@ class SpreadSnipingTab(
     )
     def __init__(self, exchange_manager, parent=None):
         super().__init__(parent)
+        self._trace_logger = get_logger("spread.trace")
         self.exchange_manager = exchange_manager
         self.settings_manager = SettingsManager()
         self._spread_armed = True
@@ -83,7 +93,9 @@ class SpreadSnipingTab(
             popular_pairs=self.POPULAR_PAIRS,
         )
         self._strategy_engine = SpreadStrategyEngine()
+        self._strategy_execution_service = SpreadStrategyExecutionService()
         self._init_strategy_state()
+        self._init_strategy_runtime()
 
         self._columns = [SpreadColumnContext(index=1), SpreadColumnContext(index=2)]
         self._columns_map = {column.index: column for column in self._columns}
@@ -107,7 +119,7 @@ class SpreadSnipingTab(
 
             for stream in column.quote_streams.values():
                 stream.tick.connect(lambda payload, idx=column.index: self._on_quote_tick(idx, payload))
-                stream.error.connect(lambda _err, idx=column.index: self._on_quote_stream_error(idx))
+                stream.error.connect(lambda err, idx=column.index: self._on_quote_stream_error(idx, err))
 
         app = QApplication.instance()
         if app is not None:
@@ -116,6 +128,31 @@ class SpreadSnipingTab(
         self._init_ui()
         self.exchange_manager.status_updated.connect(self._on_status_updated)
         self.destroyed.connect(lambda *_args: self._stop_all_quote_streams())
+        self.destroyed.connect(lambda *_args: self._shutdown_strategy_runtime())
+
+    @staticmethod
+    def _trace_format_fields(fields):
+        parts = []
+        for key, value in (fields or {}).items():
+            if value is None:
+                continue
+            text = str(value).replace("\n", " ").strip()
+            if not text:
+                continue
+            if len(text) > 240:
+                text = f"{text[:237]}..."
+            parts.append(f"{key}={text}")
+        return " | ".join(parts)
+
+    def _trace(self, event, **fields):
+        logger = getattr(self, "_trace_logger", None)
+        if logger is None:
+            return
+        suffix = self._trace_format_fields(fields)
+        if suffix:
+            logger.info("[TRACE] %s | %s", str(event or "event"), suffix)
+        else:
+            logger.info("[TRACE] %s", str(event or "event"))
 
     def _iter_columns(self):
         return self._columns
@@ -148,6 +185,8 @@ class SpreadSnipingTab(
         self.apply_theme()
         self.retranslate_ui()
         self._restore_spread_selection()
+        self._update_selector_pair_capsule_widths()
+        self._update_quote_panel_width()
         self._refresh_selector_state()
         self._refresh_spread_display()
         self._sync_strategy_fields_from_config()
@@ -320,6 +359,7 @@ class SpreadSnipingTab(
         self.spread_value_label.setObjectName("spreadValueLabel")
         self.spread_value_label.setProperty("variant", self._spread_visual_variant)
         self.spread_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spread_value_label.setFont(numeric_monospace_font(self.spread_value_label.font()))
         stack.addWidget(self.spread_select_btn)
         stack.addWidget(self.spread_value_label)
         self.spread_stack = stack
@@ -354,6 +394,22 @@ class SpreadSnipingTab(
         bid_qty_label.setObjectName("quoteQtyText")
         bid_qty_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         bid_qty_label.setText(tr("spread.qty_empty"))
+        apply_stable_numeric_label(
+            bid_price_label,
+            [
+                tr("spread.bid_price", value="999999.12345678"),
+                tr("spread.bid_price_loading"),
+                tr("spread.bid_price_empty"),
+            ],
+        )
+        apply_stable_numeric_label(
+            bid_qty_label,
+            [
+                tr("spread.qty_value", qty="999.99M USDT"),
+                tr("spread.qty_loading"),
+                tr("spread.qty_empty"),
+            ],
+        )
 
         bid_capsule_row.addWidget(bid_price_label, 1)
         bid_capsule_row.addWidget(bid_sep, 0)
@@ -378,6 +434,22 @@ class SpreadSnipingTab(
         ask_qty_label.setObjectName("quoteQtyText")
         ask_qty_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         ask_qty_label.setText(tr("spread.qty_empty"))
+        apply_stable_numeric_label(
+            ask_price_label,
+            [
+                tr("spread.ask_price", value="999999.12345678"),
+                tr("spread.ask_price_loading"),
+                tr("spread.ask_price_empty"),
+            ],
+        )
+        apply_stable_numeric_label(
+            ask_qty_label,
+            [
+                tr("spread.qty_value", qty="999.99M USDT"),
+                tr("spread.qty_loading"),
+                tr("spread.qty_empty"),
+            ],
+        )
 
         ask_capsule_row.addWidget(ask_price_label, 1)
         ask_capsule_row.addWidget(ask_sep, 0)
@@ -393,12 +465,123 @@ class SpreadSnipingTab(
         column.quote_ask_qty_label = ask_qty_label
         return frame
 
+    @staticmethod
+    def _clamp_int(value, low, high):
+        number = int(round(float(value)))
+        return max(int(low), min(int(high), number))
+
+    def _text_width(self, widget, text):
+        target = widget if widget is not None else self
+        return max(0, target.fontMetrics().horizontalAdvance(str(text or "")))
+
+    def _estimate_selector_pair_width(self):
+        selector_probe = next(
+            (column.selector_button for column in self._iter_columns() if column.selector_button is not None),
+            None,
+        )
+        pair_probe = next((column.pair_edit for column in self._iter_columns() if column.pair_edit is not None), None)
+
+        selector_texts = [tr("spread.exchange_1_default"), tr("spread.exchange_2_default")]
+        pair_texts = [tr("spread.pair_placeholder"), tr("spread.pairs_loading"), tr("spread.pairs_empty")]
+        for column in self._iter_columns():
+            selector_texts.append(self._selector_text(column))
+            if column.selected_exchange:
+                selector_texts.append(column.selected_exchange)
+            if column.selected_pair:
+                pair_texts.append(column.selected_pair)
+
+        selector_px = max(self._text_width(selector_probe, text) for text in selector_texts)
+        pair_px = max(self._text_width(pair_probe, text) for text in pair_texts)
+
+        selector_width = selector_px + 74  # icon + paddings + side margins
+        pair_width = pair_px + 34
+        target_width = max(selector_width, pair_width)
+        return self._clamp_int(target_width, self.COLUMN_WIDTH_MIN, self.COLUMN_WIDTH)
+
+    def _update_selector_pair_capsule_widths(self):
+        width = self._estimate_selector_pair_width()
+        for column in self._iter_columns():
+            if column.selector_button is not None and column.selector_button.width() != width:
+                column.selector_button.setFixedWidth(width)
+            if column.pair_edit is not None and column.pair_edit.width() != width:
+                column.pair_edit.setFixedWidth(width)
+
+    def _estimate_quote_panel_width(self):
+        price_probe = next(
+            (column.quote_bid_label for column in self._iter_columns() if column.quote_bid_label is not None),
+            None,
+        )
+        qty_probe = next(
+            (column.quote_bid_qty_label for column in self._iter_columns() if column.quote_bid_qty_label is not None),
+            None,
+        )
+        price_texts = [
+            tr("spread.bid_price", value="999999.12345678"),
+            tr("spread.ask_price", value="999999.12345678"),
+            tr("spread.bid_price_loading"),
+            tr("spread.ask_price_loading"),
+            tr("spread.bid_price_empty"),
+            tr("spread.ask_price_empty"),
+        ]
+        qty_texts = [
+            tr("spread.qty_value", qty="999.99M USDT"),
+            tr("spread.qty_loading"),
+            tr("spread.qty_empty"),
+        ]
+        price_width = max(self._text_width(price_probe, text) for text in price_texts)
+        qty_width = max(self._text_width(qty_probe, text) for text in qty_texts)
+
+        side_capsule = (8 + 8) + price_width + qty_width + 1 + (8 * 2) + 4
+        panel_width = (4 + 4) + (side_capsule * 2) + 8 + 6
+        return self._clamp_int(panel_width, self.QUOTE_PANEL_WIDTH_MIN, self.QUOTE_PANEL_WIDTH)
+
+    def _update_quote_panel_width(self):
+        width = self._estimate_quote_panel_width()
+        for column in self._iter_columns():
+            if column.quote_frame is not None and column.quote_frame.width() != width:
+                column.quote_frame.setFixedWidth(width)
+
     def retranslate_ui(self):
         if hasattr(self, "spread_select_btn"):
             self.spread_select_btn.setText(tr("action.select"))
+        for column in self._iter_columns():
+            apply_stable_numeric_label(
+                column.quote_bid_label,
+                [
+                    tr("spread.bid_price", value="999999.12345678"),
+                    tr("spread.bid_price_loading"),
+                    tr("spread.bid_price_empty"),
+                ],
+            )
+            apply_stable_numeric_label(
+                column.quote_ask_label,
+                [
+                    tr("spread.ask_price", value="999999.12345678"),
+                    tr("spread.ask_price_loading"),
+                    tr("spread.ask_price_empty"),
+                ],
+            )
+            apply_stable_numeric_label(
+                column.quote_bid_qty_label,
+                [
+                    tr("spread.qty_value", qty="999.99M USDT"),
+                    tr("spread.qty_loading"),
+                    tr("spread.qty_empty"),
+                ],
+            )
+            apply_stable_numeric_label(
+                column.quote_ask_qty_label,
+                [
+                    tr("spread.qty_value", qty="999.99M USDT"),
+                    tr("spread.qty_loading"),
+                    tr("spread.qty_empty"),
+                ],
+            )
         self._retranslate_strategy_ui()
         self._update_selector_texts()
+        self._update_selector_pair_capsule_widths()
         self._refresh_pair_controls()
+        self._update_quote_panel_width()
         self._refresh_all_quote_labels()
         self._refresh_spread_display()
         self._update_strategy_state_label()

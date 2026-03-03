@@ -6,6 +6,7 @@ import time
 from urllib.parse import urlencode
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from core.exchange.base import BaseExchange
 from core.utils.logger import get_logger
@@ -24,6 +25,10 @@ class BitgetExchange(BaseExchange):
         self.product_type = "USDT-FUTURES"
         self.time_offset = 0
         self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=32, pool_maxsize=32, max_retries=0, pool_block=False)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        self._last_api_error = ""
 
     @staticmethod
     def _to_float(value, default=0.0):
@@ -42,7 +47,7 @@ class BitgetExchange(BaseExchange):
 
     def _get_server_time_offset(self):
         try:
-            response = requests.get(f"{self.base_url}/api/v2/public/time", timeout=self.timeout)
+            response = self.session.get(f"{self.base_url}/api/v2/public/time", timeout=self.timeout)
             response.raise_for_status()
             payload = response.json()
             if payload.get("code") != "00000":
@@ -62,7 +67,16 @@ class BitgetExchange(BaseExchange):
         ).digest()
         return base64.b64encode(digest).decode("utf-8")
 
-    def _request(self, method, path, params=None, signed=False):
+    def _request(
+        self,
+        method,
+        path,
+        params=None,
+        signed=False,
+        retry_attempts=None,
+        retryable_codes=None,
+        retry_delay_sec=0.20,
+    ):
         method = method.upper()
         params = dict(params or {})
 
@@ -80,13 +94,15 @@ class BitgetExchange(BaseExchange):
 
         if signed:
             if not self.api_key or not self.api_secret or not self.api_passphrase:
+                self._last_api_error = f"{path}: отсутствуют API-данные для подписанного запроса Bitget"
                 logger.error("%s: отсутствуют API-данные для подписанного запроса Bitget", self.name)
                 return None
 
             if not self._is_latin1(self.api_key) or not self._is_latin1(self.api_passphrase):
                 msg = "API ключ/пароль Bitget должны быть на латинице"
                 self.last_error = msg
-                self.error.emit(self.name, msg)
+                self._last_api_error = f"{path}: {msg}"
+                self._emit_error(msg)
                 return None
 
             timestamp = str(int(time.time() * 1000) + self.time_offset)
@@ -107,24 +123,73 @@ class BitgetExchange(BaseExchange):
         elif method in {"POST", "PUT"}:
             request_kwargs["data"] = body_text
 
+        retryable = (
+            {str(c).strip() for c in retryable_codes}
+            if retryable_codes is not None
+            else {"40010"}
+        )
         try:
-            response = self.session.request(method, url, **request_kwargs)
-        except (requests.RequestException, UnicodeError, ValueError) as exc:
-            logger.error("Bitget %s %s ошибка запроса: %s", method, path, exc)
-            return None
-        except Exception as exc:
-            logger.error("Bitget %s %s непредвиденная ошибка: %s", method, path, exc)
-            return None
-
+            attempts = int(retry_attempts) if retry_attempts is not None else 2
+        except (TypeError, ValueError):
+            attempts = 2
+        attempts = max(1, attempts)
         try:
-            payload = response.json()
-        except ValueError:
-            payload = {"raw": response.text}
+            retry_delay = max(0.0, float(retry_delay_sec))
+        except (TypeError, ValueError):
+            retry_delay = 0.20
 
-        if response.ok and payload.get("code") == "00000":
-            return payload
+        for attempt in range(attempts):
+            try:
+                response = self.session.request(method, url, **request_kwargs)
+            except (requests.RequestException, UnicodeError, ValueError) as exc:
+                self._last_api_error = f"{path}: сеть ({exc})"
+                if attempt + 1 < attempts:
+                    time.sleep(retry_delay)
+                    continue
+                logger.error("Bitget %s %s ошибка запроса: %s", method, path, exc)
+                return None
+            except Exception as exc:
+                self._last_api_error = f"{path}: непредвиденная ошибка ({exc})"
+                if attempt + 1 < attempts:
+                    time.sleep(retry_delay)
+                    continue
+                logger.error("Bitget %s %s непредвиденная ошибка: %s", method, path, exc)
+                return None
 
-        logger.error("Bitget %s %s ошибка %s: %s", method, path, response.status_code, payload)
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {"raw": response.text}
+
+            if response.ok and payload.get("code") == "00000":
+                self._last_api_error = ""
+                return payload
+
+            code = ""
+            message = ""
+            if isinstance(payload, dict):
+                code = str(payload.get("code") or "").strip()
+                message = str(payload.get("msg") or "").strip()
+            if code and message:
+                self._last_api_error = f"{path}: [{code}] {message}"
+            elif message:
+                self._last_api_error = f"{path}: {message}"
+            else:
+                self._last_api_error = f"{path}: HTTP {response.status_code}"
+
+            if code in retryable and attempt + 1 < attempts:
+                time.sleep(retry_delay)
+                continue
+
+            if code == "22002":
+                # Expected transient on reduce-close races; keep out of normal runtime noise.
+                logger.debug("Bitget %s %s предупреждение %s: %s", method, path, response.status_code, payload)
+            elif code in retryable:
+                logger.warning("Bitget %s %s таймаут %s: %s", method, path, response.status_code, payload)
+            else:
+                logger.error("Bitget %s %s ошибка %s: %s", method, path, response.status_code, payload)
+            return None
+
         return None
 
     def _fetch_balance(self):
@@ -186,7 +251,7 @@ class BitgetExchange(BaseExchange):
         if not self.api_key or not self.api_secret or not self.api_passphrase:
             msg = "Для Bitget нужны API ключ, API секрет и пароль API"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             logger.error("%s: %s", self.name, msg)
             return False
 
@@ -201,7 +266,7 @@ class BitgetExchange(BaseExchange):
         if not contracts:
             msg = "Bitget недоступна или указан неверный тип продукта"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             return False
 
         balance = self._fetch_balance()
@@ -209,7 +274,7 @@ class BitgetExchange(BaseExchange):
         if balance is None or positions is None:
             msg = "Ошибка авторизации Bitget"
             self.last_error = msg
-            self.error.emit(self.name, msg)
+            self._emit_error(msg)
             return False
 
         self.last_error = ""
@@ -218,16 +283,16 @@ class BitgetExchange(BaseExchange):
         self.pnl = sum(pos.get("pnl", 0.0) for pos in self.positions)
         self.is_connected = True
 
-        self.connected.emit(self.name)
-        self.balance_updated.emit(self.name, self.balance)
-        self.positions_updated.emit(self.name, self.positions)
-        self.pnl_updated.emit(self.name, self.pnl)
+        self._emit_connected()
+        self._emit_balance_updated()
+        self._emit_positions_updated()
+        self._emit_pnl_updated()
         logger.info("%s подключена", self.name)
         return True
 
     def disconnect(self):
         self.is_connected = False
-        self.disconnected.emit(self.name)
+        self._emit_disconnected()
         logger.info("%s отключена", self.name)
 
     def subscribe_price(self, symbol):
@@ -281,13 +346,13 @@ class BitgetExchange(BaseExchange):
 
         positions = self._fetch_positions()
         if positions is None:
-            raise RuntimeError("Bitget: не удалось получить позиции для закрытия")
+            raise RuntimeError("Bitget: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РїРѕР·РёС†РёРё РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ")
 
         if not positions:
             self.positions = []
             self.pnl = 0.0
-            self.positions_updated.emit(self.name, self.positions)
-            self.pnl_updated.emit(self.name, self.pnl)
+            self._emit_positions_updated()
+            self._emit_pnl_updated()
             return 0
 
         failed = []
@@ -309,14 +374,15 @@ class BitgetExchange(BaseExchange):
         positions_after = self._fetch_positions()
         if balance is not None:
             self.balance = balance
-            self.balance_updated.emit(self.name, self.balance)
+            self._emit_balance_updated()
         if positions_after is not None:
             self.positions = positions_after
             self.pnl = sum(pos.get("pnl", 0.0) for pos in positions_after)
-            self.positions_updated.emit(self.name, self.positions)
-            self.pnl_updated.emit(self.name, self.pnl)
+            self._emit_positions_updated()
+            self._emit_pnl_updated()
 
         if failed:
-            raise RuntimeError(f"Bitget: не закрыты позиции {', '.join(sorted(set(failed)))}")
+            raise RuntimeError(f"Bitget: РЅРµ Р·Р°РєСЂС‹С‚С‹ РїРѕР·РёС†РёРё {', '.join(sorted(set(failed)))}")
 
         return len(positions)
+
