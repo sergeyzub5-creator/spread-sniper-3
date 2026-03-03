@@ -4,6 +4,52 @@ from core.utils.thread_pool import ThreadManager, Worker
 
 
 class SpreadQuoteMixin:
+    @staticmethod
+    def _is_usdt_like_pair(pair):
+        symbol = str(pair or "").strip().upper()
+        if not symbol:
+            return False
+        return symbol.endswith(("USDT", "USDC", "BUSD"))
+
+    def _format_usdt_value(self, value):
+        numeric = self._to_float(value)
+        if numeric is None or numeric <= 0:
+            return "--"
+        return self._format_compact_volume(numeric)
+
+    def _format_compact_volume(self, value):
+        numeric = self._to_float(value)
+        if numeric is None:
+            return "--"
+
+        abs_value = abs(numeric)
+        suffix = ""
+        scaled = abs_value
+        if abs_value >= 1_000_000:
+            scaled = abs_value / 1_000_000.0
+            suffix = "м"
+        elif abs_value >= 1_000:
+            scaled = abs_value / 1_000.0
+            suffix = "к"
+
+        if scaled >= 100:
+            text = f"{scaled:.0f}"
+        elif scaled >= 10:
+            text = f"{scaled:.1f}"
+        elif scaled >= 1:
+            text = f"{scaled:.2f}"
+        elif scaled >= 0.01:
+            text = f"{scaled:.4f}"
+        else:
+            text = f"{scaled:.6f}"
+
+        text = text.rstrip("0").rstrip(".")
+        if not text:
+            text = "0"
+
+        sign = "-" if numeric < 0 else ""
+        return f"{sign}{text}{suffix}"
+
     def _refresh_all_quote_labels(self):
         for column in self._iter_columns():
             self._apply_quote_text_state(column.index)
@@ -37,11 +83,17 @@ class SpreadQuoteMixin:
                 bid_label.setText(tr("spread.bid_price", value=bid_price_text))
                 ask_label.setText(tr("spread.ask_price", value=ask_price_text))
                 if bid_qty_value is not None and bid_qty_value > 0:
-                    bid_qty_label.setText(tr("spread.qty_value", qty=self._format_price(bid_qty_value)))
+                    qty_view = self._format_compact_volume(bid_qty_value)
+                    if self._is_usdt_like_pair(column.selected_pair) and bid is not None and bid > 0:
+                        qty_view = f"{self._format_usdt_value(bid * bid_qty_value)} USDT"
+                    bid_qty_label.setText(tr("spread.qty_value", qty=qty_view))
                 else:
                     bid_qty_label.setText(tr("spread.qty_empty"))
                 if ask_qty_value is not None and ask_qty_value > 0:
-                    ask_qty_label.setText(tr("spread.qty_value", qty=self._format_price(ask_qty_value)))
+                    qty_view = self._format_compact_volume(ask_qty_value)
+                    if self._is_usdt_like_pair(column.selected_pair) and ask is not None and ask > 0:
+                        qty_view = f"{self._format_usdt_value(ask * ask_qty_value)} USDT"
+                    ask_qty_label.setText(tr("spread.qty_value", qty=qty_view))
                 else:
                     ask_qty_label.setText(tr("spread.qty_empty"))
             else:

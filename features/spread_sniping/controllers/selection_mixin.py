@@ -14,6 +14,11 @@ from ui.widgets.exchange_badge import build_exchange_icon
 
 
 class SpreadSelectionMixin:
+    def _set_spread_pending_selection_safe(self):
+        setter = getattr(self, "_set_spread_pending_selection", None)
+        if callable(setter):
+            setter()
+
     def _persist_spread_selection_safe(self, index):
         persist = getattr(self, "_persist_spread_selection", None)
         if callable(persist):
@@ -197,6 +202,8 @@ class SpreadSelectionMixin:
             btn.setIconSize(QSize(24, 24))
 
     def _open_exchange_menu(self, index):
+        self._set_spread_pending_selection_safe()
+
         rows = self._connected_rows()
         if not rows:
             return
@@ -532,6 +539,8 @@ class SpreadSelectionMixin:
         if column is None or column.pair_edit is None:
             return
 
+        self._set_spread_pending_selection_safe()
+
         for other in self._iter_columns():
             if other.index != index:
                 self._cancel_pair_edit_session(other.index)
@@ -560,20 +569,24 @@ class SpreadSelectionMixin:
         if not edit.isVisible() or not edit.isEnabled():
             edit.setReadOnly(True)
             edit.setClearButtonEnabled(False)
+            edit.setCursor(Qt.CursorShape.ArrowCursor)
             return
 
         if not column.pair_edit_active:
             edit.setReadOnly(True)
             edit.setClearButtonEnabled(False)
+            edit.setCursor(Qt.CursorShape.PointingHandCursor)
             return
 
         if column.selected_pair and not column.pair_reedit:
             edit.setReadOnly(True)
             edit.setClearButtonEnabled(False)
+            edit.setCursor(Qt.CursorShape.PointingHandCursor)
             return
 
         edit.setReadOnly(False)
         edit.setClearButtonEnabled(bool(column.selected_pair and column.pair_reedit))
+        edit.setCursor(Qt.CursorShape.IBeamCursor)
 
     def _begin_pair_edit_session(self, index):
         column = self._column(index)

@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
+    QStackedLayout,
     QVBoxLayout,
     QWidget,
 )
@@ -56,13 +58,14 @@ class SpreadSnipingTab(
     POPULAR_SUGGESTIONS = 12
     COLUMN_WIDTH = 250
     QUOTE_PANEL_WIDTH = 540
-    SPREAD_VALUE_HEIGHT = 84
+    SPREAD_VALUE_HEIGHT = 92
     SPREAD_VALUE_WIDTH = 250
 
     def __init__(self, exchange_manager, parent=None):
         super().__init__(parent)
         self.exchange_manager = exchange_manager
         self.settings_manager = SettingsManager()
+        self._spread_armed = True
         self._runtime_service = SpreadRuntimeService(
             exchange_manager=self.exchange_manager,
             popular_pairs=self.POPULAR_PAIRS,
@@ -112,29 +115,16 @@ class SpreadSnipingTab(
         layout.setSpacing(10)
 
         self.container = QFrame()
+        self.container.setObjectName("spreadContainer")
 
         card_layout = QVBoxLayout(self.container)
         card_layout.setContentsMargins(16, 16, 16, 16)
         card_layout.setSpacing(10)
 
-        self.title_label = QLabel()
-        self.title_label.setObjectName("title")
-
-        selectors_row = self._build_dual_row(self._create_selector_button)
-        pairs_row = self._build_dual_row(self._create_pair_input)
-        spread_value_row = self._build_center_row(self._create_spread_value_widget())
+        selectors_row = self._build_selectors_with_spread_row()
         quotes_row = self._build_dual_row(self._create_quote_widget)
-
-        self.info_label = QLabel()
-        self.info_label.setObjectName("subtitle")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        card_layout.addWidget(self.title_label)
         card_layout.addLayout(selectors_row)
-        card_layout.addLayout(spread_value_row)
-        card_layout.addLayout(pairs_row)
         card_layout.addLayout(quotes_row)
-        card_layout.addWidget(self.info_label)
         card_layout.addStretch()
 
         layout.addWidget(self.container)
@@ -166,19 +156,81 @@ class SpreadSnipingTab(
             row.addWidget(half, 1)
         return row
 
-    @staticmethod
-    def _build_center_row(center_widget):
+    def _build_dual_row_with_center_gap(self, widget_factory, center_gap_width):
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        row.addStretch()
-        row.addWidget(center_widget, 0, Qt.AlignmentFlag.AlignCenter)
-        row.addStretch()
+        row.setSpacing(10)
+
+        columns = self._iter_columns()
+        if len(columns) < 2:
+            return row
+
+        left_half = QWidget()
+        left_layout = QHBoxLayout(left_half)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_layout.addStretch()
+        left_layout.addWidget(widget_factory(columns[0]), 0)
+        left_layout.addStretch()
+
+        right_half = QWidget()
+        right_layout = QHBoxLayout(right_half)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        right_layout.addStretch()
+        right_layout.addWidget(widget_factory(columns[1]), 0)
+        right_layout.addStretch()
+
+        center_gap = QWidget()
+        center_gap.setFixedWidth(max(1, int(center_gap_width or 1)))
+
+        row.addWidget(left_half, 1)
+        row.addWidget(center_gap, 0, Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(right_half, 1)
+        return row
+
+    def _build_selectors_with_spread_row(self):
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+
+        columns = self._iter_columns()
+        if len(columns) < 2:
+            return row
+
+        left_half = QWidget()
+        left_layout = QVBoxLayout(left_half)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
+        left_layout.addWidget(self._create_selector_button(columns[0]), 0, Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(self._create_pair_input(columns[0]), 0, Qt.AlignmentFlag.AlignCenter)
+
+        right_half = QWidget()
+        right_layout = QVBoxLayout(right_half)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+        right_layout.addWidget(self._create_selector_button(columns[1]), 0, Qt.AlignmentFlag.AlignCenter)
+        right_layout.addWidget(self._create_pair_input(columns[1]), 0, Qt.AlignmentFlag.AlignCenter)
+
+        center_column = QFrame()
+        center_column.setObjectName("spreadCenterColumn")
+        center_column.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        center_column.setMinimumWidth(self.SPREAD_VALUE_WIDTH + 20)
+
+        center_layout = QVBoxLayout(center_column)
+        center_layout.setContentsMargins(8, 6, 8, 6)
+        center_layout.setSpacing(0)
+        center_layout.addWidget(self._create_spread_value_widget(), 0, Qt.AlignmentFlag.AlignCenter)
+
+        row.addWidget(left_half, 1)
+        row.addWidget(center_column, 0)
+        row.addWidget(right_half, 1)
         return row
 
     def _create_selector_button(self, column):
         btn = QPushButton()
         btn.setObjectName("exchangeSelector")
+        btn.setProperty("toneRole", "neutral")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFixedWidth(self.COLUMN_WIDTH)
         btn.clicked.connect(lambda _checked=False, idx=column.index: self._open_exchange_menu(idx))
@@ -215,21 +267,42 @@ class SpreadSnipingTab(
     def _create_spread_value_widget(self):
         frame = QFrame()
         frame.setObjectName("spreadValueFrame")
-        frame.setFixedHeight(self.SPREAD_VALUE_HEIGHT)
+        frame.setProperty("mode", "spread")
+        frame.setMinimumHeight(self.SPREAD_VALUE_HEIGHT)
         frame.setMinimumWidth(self.SPREAD_VALUE_WIDTH)
+        frame.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.spread_value_frame = frame
 
-        row = QHBoxLayout(frame)
-        row.setContentsMargins(14, 6, 14, 6)
-        row.setSpacing(0)
+        outer_layout = QVBoxLayout(frame)
+        outer_layout.setContentsMargins(4, 1, 4, 1)
+        outer_layout.setSpacing(0)
+        self.spread_outer_layout = outer_layout
+
+        inner = QFrame()
+        inner.setObjectName("spreadValueInner")
+        inner.setProperty("mode", "spread")
+        self.spread_value_inner = inner
+        outer_layout.addWidget(inner)
+
+        stack = QStackedLayout(inner)
+        stack.setContentsMargins(12, 6, 12, 6)
+        stack.setStackingMode(QStackedLayout.StackingMode.StackOne)
+
+        self.spread_select_btn = QPushButton()
+        self.spread_select_btn.setObjectName("spreadActionButton")
+        self.spread_select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.spread_select_btn.clicked.connect(self._on_spread_select_clicked)
 
         self.spread_value_label = QLabel()
         self.spread_value_label.setObjectName("spreadValueLabel")
         self.spread_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        row.addWidget(self.spread_value_label)
+        stack.addWidget(self.spread_select_btn)
+        stack.addWidget(self.spread_value_label)
+        self.spread_stack = stack
         return frame
 
     def _create_quote_widget(self, column):
-        frame = QFrame()
+        frame = QWidget()
         frame.setObjectName("quotePanel")
         frame.setFixedWidth(self.QUOTE_PANEL_WIDTH)
         frame.setVisible(False)
@@ -255,7 +328,7 @@ class SpreadSnipingTab(
 
         bid_qty_label = QLabel()
         bid_qty_label.setObjectName("quoteQtyText")
-        bid_qty_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        bid_qty_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         bid_qty_label.setText(tr("spread.qty_empty"))
 
         bid_capsule_row.addWidget(bid_price_label, 1)
@@ -279,7 +352,7 @@ class SpreadSnipingTab(
 
         ask_qty_label = QLabel()
         ask_qty_label.setObjectName("quoteQtyText")
-        ask_qty_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        ask_qty_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         ask_qty_label.setText(tr("spread.qty_empty"))
 
         ask_capsule_row.addWidget(ask_price_label, 1)
@@ -303,26 +376,25 @@ class SpreadSnipingTab(
         c_muted = theme_color("text_muted")
         c_alt = theme_color("surface_alt")
         c_accent = theme_color("accent")
+        c_success = theme_color("success")
+        c_danger = theme_color("danger")
         c_capsule_border = self._rgba(c_accent, 0.52)
         c_capsule_glow = self._rgba(c_accent, 0.18)
         c_capsule_mid = self._rgba(c_alt, 0.95)
         c_capsule_hover = self._rgba(c_accent, 0.24)
+        c_cheap_border = self._rgba(c_success, 0.76)
+        c_cheap_tone = self._rgba(c_success, 0.20)
+        c_cheap_hover = self._rgba(c_success, 0.30)
+        c_exp_border = self._rgba(c_danger, 0.76)
+        c_exp_tone = self._rgba(c_danger, 0.20)
+        c_exp_hover = self._rgba(c_danger, 0.30)
 
         self.container.setStyleSheet(
             f"""
-            QFrame {{
+            QFrame#spreadContainer {{
                 background-color: {c_surface};
-                border: 1px solid {c_border};
-                border-radius: 6px;
-            }}
-            QLabel#title {{
-                color: {c_primary};
-                font-size: 16px;
-                font-weight: bold;
-            }}
-            QLabel#subtitle {{
-                color: {c_muted};
-                font-size: 13px;
+                border: none;
+                border-radius: 0px;
             }}
             QPushButton#exchangeSelector {{
                 background: qlineargradient(
@@ -343,6 +415,32 @@ class SpreadSnipingTab(
                 border-color: {c_accent};
                 background-color: {c_capsule_hover};
             }}
+            QPushButton#exchangeSelector[toneRole="cheap"] {{
+                border-color: {c_cheap_border};
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {c_cheap_tone},
+                    stop: 0.50 {c_capsule_mid},
+                    stop: 1 {c_surface}
+                );
+            }}
+            QPushButton#exchangeSelector[toneRole="cheap"]:hover {{
+                border-color: {c_success};
+                background-color: {c_cheap_hover};
+            }}
+            QPushButton#exchangeSelector[toneRole="expensive"] {{
+                border-color: {c_exp_border};
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {c_exp_tone},
+                    stop: 0.50 {c_capsule_mid},
+                    stop: 1 {c_surface}
+                );
+            }}
+            QPushButton#exchangeSelector[toneRole="expensive"]:hover {{
+                border-color: {c_danger};
+                background-color: {c_exp_hover};
+            }}
             QPushButton#exchangeSelector:disabled {{
                 color: {c_muted};
                 border-color: {c_border};
@@ -358,6 +456,10 @@ class SpreadSnipingTab(
                 font-size: 12px;
                 font-weight: 600;
             }}
+            QLineEdit#pairSelector:hover {{
+                border-color: {c_accent};
+                background-color: {c_capsule_hover};
+            }}
             QLineEdit#pairSelector:focus {{
                 border-color: {c_accent};
             }}
@@ -366,30 +468,71 @@ class SpreadSnipingTab(
                 border-color: {c_border};
                 background-color: {c_surface};
             }}
-            QFrame#quotePanel {{
-                background-color: {c_alt};
-                border: 1px solid {c_border};
-                border-radius: 10px;
+            QWidget#quotePanel {{
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
             }}
             QFrame#quoteSideCapsule {{
                 background-color: {c_surface};
-                border: 1px solid {c_border};
+                border: none;
                 border-radius: 8px;
             }}
             QFrame#quoteMidDivider {{
-                background-color: {c_border};
+                background-color: {self._rgba(c_border, 0.55)};
                 border: none;
                 min-height: 18px;
                 max-height: 18px;
             }}
-            QFrame#spreadValueFrame {{
-                background-color: {c_alt};
+            QFrame#spreadCenterColumn {{
+                background-color: {self._rgba(c_alt, 0.50)};
+                border: 1px solid {self._rgba(c_border, 0.35)};
+                border-radius: 18px;
+            }}
+            QFrame#spreadValueFrame[mode="select"] {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {c_capsule_glow},
+                    stop: 0.50 {c_capsule_mid},
+                    stop: 1 {c_surface}
+                );
                 border: 1px solid {c_capsule_border};
                 border-radius: 16px;
             }}
+            QFrame#spreadValueFrame[mode="spread"] {{
+                background-color: transparent;
+                border: none;
+                border-radius: 16px;
+            }}
+            QFrame#spreadValueInner[mode="spread"] {{
+                background-color: {c_alt};
+                border: none;
+                border-radius: 14px;
+            }}
+            QFrame#spreadValueInner[mode="select"] {{
+                background-color: transparent;
+                border: none;
+                border-radius: 16px;
+            }}
+            QPushButton#spreadActionButton {{
+                background-color: transparent;
+                color: {c_primary};
+                border: none;
+                border-radius: 16px;
+                font-size: 20px;
+                font-weight: 700;
+                padding: 6px 12px;
+            }}
+            QPushButton#spreadActionButton:hover {{
+                background-color: {c_capsule_hover};
+            }}
+            QPushButton#spreadActionButton:disabled {{
+                color: {c_muted};
+                background-color: transparent;
+            }}
             QLabel#spreadValueLabel {{
                 color: {c_accent};
-                font-size: 34px;
+                font-size: 56px;
                 font-weight: 800;
                 letter-spacing: 0.5px;
             }}
@@ -400,16 +543,19 @@ class SpreadSnipingTab(
                 color: {theme_color('success')};
                 font-size: 11px;
                 font-weight: 700;
+                padding-left: 4px;
             }}
             QLabel#askPriceText {{
                 color: {theme_color('danger')};
                 font-size: 11px;
                 font-weight: 700;
+                padding-left: 4px;
             }}
             QLabel#quoteQtyText {{
                 color: {c_primary};
                 font-size: 11px;
                 font-weight: 700;
+                padding-left: 4px;
             }}
         """
         )
@@ -428,9 +574,14 @@ class SpreadSnipingTab(
                 padding: 6px 8px;
                 border-radius: 6px;
             }}
+            QListView#pairPopup::item:hover {{
+                background-color: {self._rgba(c_accent, 0.20)};
+                color: {c_primary};
+            }}
             QListView#pairPopup::item:selected {{
                 background-color: {theme_color('selection_bg_soft')};
                 color: {c_accent};
+                border: 1px solid {self._rgba(c_accent, 0.45)};
             }}
         """
 
@@ -441,8 +592,8 @@ class SpreadSnipingTab(
                 popup.setStyleSheet(popup_style)
 
     def retranslate_ui(self):
-        self.title_label.setText(tr("spread.title"))
-        self.info_label.setText(tr("spread.subtitle"))
+        if hasattr(self, "spread_select_btn"):
+            self.spread_select_btn.setText(tr("action.select"))
         self._update_selector_texts()
         self._refresh_pair_controls()
         self._refresh_all_quote_labels()
@@ -529,35 +680,145 @@ class SpreadSnipingTab(
                     column.pair_edit.blockSignals(False)
 
     def _calculate_spread_percent(self):
+        state = self._calculate_spread_state()
+        return state.get("percent")
+
+    def _calculate_spread_state(self):
         left = self._column(1)
         right = self._column(2)
         if left is None or right is None:
-            return None
+            return {"percent": None, "cheap_index": None, "expensive_index": None}
 
         if not left.selected_exchange or not right.selected_exchange:
-            return None
+            return {"percent": None, "cheap_index": None, "expensive_index": None}
         if not left.selected_pair or not right.selected_pair:
-            return None
+            return {"percent": None, "cheap_index": None, "expensive_index": None}
 
         bid_1 = self._to_float(left.quote_bid)
         ask_1 = self._to_float(left.quote_ask)
         bid_2 = self._to_float(right.quote_bid)
         ask_2 = self._to_float(right.quote_ask)
         if not bid_1 or not ask_1 or not bid_2 or not ask_2:
-            return None
+            return {"percent": None, "cheap_index": None, "expensive_index": None}
         if bid_1 <= 0 or ask_1 <= 0 or bid_2 <= 0 or ask_2 <= 0:
-            return None
+            return {"percent": None, "cheap_index": None, "expensive_index": None}
 
-        spread_a = abs((bid_1 - ask_2) / ask_2) * 100.0
-        spread_b = abs((bid_2 - ask_1) / ask_1) * 100.0
-        return max(spread_a, spread_b)
+        edge_1 = (bid_1 - ask_2) / ask_2 if ask_2 else 0.0
+        edge_2 = (bid_2 - ask_1) / ask_1 if ask_1 else 0.0
+
+        if edge_1 >= edge_2:
+            best_edge = edge_1
+            expensive_index = 1
+            cheap_index = 2
+        else:
+            best_edge = edge_2
+            expensive_index = 2
+            cheap_index = 1
+
+        percent = abs(best_edge) * 100.0
+        if percent <= 0:
+            cheap_index = None
+            expensive_index = None
+
+        return {
+            "percent": percent,
+            "cheap_index": cheap_index,
+            "expensive_index": expensive_index,
+        }
+
+    def _apply_exchange_tone(self, index, role):
+        column = self._column(index)
+        if column is None or column.selector_button is None:
+            return
+
+        role_value = str(role or "neutral")
+        button = column.selector_button
+        if button.property("toneRole") == role_value:
+            return
+        button.setProperty("toneRole", role_value)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
+    def _set_spread_pending_selection(self):
+        if not getattr(self, "_spread_armed", False):
+            return
+        self._spread_armed = False
+        self._refresh_spread_display()
+
+    def _on_spread_select_clicked(self):
+        state = self._calculate_spread_state()
+        if state.get("percent") is None:
+            return
+        self._spread_armed = True
+        self._refresh_spread_display()
+
+    def _set_spread_frame_mode(self, mode):
+        frame = getattr(self, "spread_value_frame", None)
+        inner = getattr(self, "spread_value_inner", None)
+        outer_layout = getattr(self, "spread_outer_layout", None)
+        stack = getattr(self, "spread_stack", None)
+        if frame is None or inner is None:
+            return
+        mode_value = str(mode or "spread")
+        changed = False
+        if frame.property("mode") != mode_value:
+            frame.setProperty("mode", mode_value)
+            frame.style().unpolish(frame)
+            frame.style().polish(frame)
+            frame.update()
+            changed = True
+        if inner.property("mode") != mode_value:
+            inner.setProperty("mode", mode_value)
+            inner.style().unpolish(inner)
+            inner.style().polish(inner)
+            inner.update()
+            changed = True
+
+        if outer_layout is not None:
+            if mode_value == "spread":
+                outer_layout.setContentsMargins(4, 1, 4, 1)
+            else:
+                outer_layout.setContentsMargins(0, 0, 0, 0)
+        if stack is not None:
+            if mode_value == "spread":
+                stack.setContentsMargins(12, 6, 12, 6)
+            else:
+                stack.setContentsMargins(2, 2, 2, 2)
+
+        if not changed:
+            return
 
     def _refresh_spread_display(self):
         label = getattr(self, "spread_value_label", None)
-        if label is None:
+        stack = getattr(self, "spread_stack", None)
+        select_btn = getattr(self, "spread_select_btn", None)
+        if label is None or stack is None or select_btn is None:
             return
 
-        spread_value = self._calculate_spread_percent()
+        state = self._calculate_spread_state()
+        spread_value = state.get("percent")
+        cheap_index = state.get("cheap_index")
+        expensive_index = state.get("expensive_index")
+
+        if not self._spread_armed:
+            self._set_spread_frame_mode("select")
+            stack.setCurrentWidget(select_btn)
+            select_btn.setEnabled(spread_value is not None)
+            self._apply_exchange_tone(1, "neutral")
+            self._apply_exchange_tone(2, "neutral")
+            return
+
+        self._set_spread_frame_mode("spread")
+        stack.setCurrentWidget(label)
+
+        self._apply_exchange_tone(1, "neutral")
+        self._apply_exchange_tone(2, "neutral")
+        if cheap_index in {1, 2}:
+            self._apply_exchange_tone(cheap_index, "cheap")
+        if expensive_index in {1, 2}:
+            self._apply_exchange_tone(expensive_index, "expensive")
+
         is_empty = spread_value is None
         if is_empty:
             label.setText(tr("spread.center_empty"))

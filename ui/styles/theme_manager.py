@@ -190,9 +190,19 @@ def build_app_stylesheet() -> str:
             padding: 8px 16px;
             margin-right: 2px;
         }}
+        QTabBar::tab:hover {{
+            background-color: {c['accent_bg']};
+            color: {c['text_primary']};
+            border-color: {c['accent']};
+        }}
         QTabBar::tab:selected {{
             background-color: {c['tab_selected_bg']};
             color: {c['accent']};
+        }}
+        QTabBar::tab:selected:hover {{
+            background-color: {c['tab_selected_bg']};
+            color: {c['accent']};
+            border-color: {c['accent']};
         }}
         QPushButton {{
             background-color: {c['surface_alt']};
@@ -201,13 +211,69 @@ def build_app_stylesheet() -> str:
             padding: 8px 16px;
         }}
         QPushButton:hover {{
-            background-color: {c['border']};
+            background-color: {c['accent_bg']};
+            border-color: {c['accent']};
+        }}
+        QPushButton:pressed {{
+            background-color: {c['accent_bg_hover']};
+            border-color: {c['accent']};
+        }}
+        QToolButton {{
+            background-color: {c['surface_alt']};
+            border: 1px solid {c['border']};
+            border-radius: 6px;
+            padding: 5px 10px;
+        }}
+        QToolButton:hover {{
+            background-color: {c['accent_bg']};
+            border-color: {c['accent']};
+        }}
+        QToolButton:pressed {{
+            background-color: {c['accent_bg_hover']};
+            border-color: {c['accent']};
         }}
         QLineEdit {{
             background-color: {c['surface_alt']};
             border: 1px solid {c['border']};
             border-radius: 4px;
             padding: 6px;
+        }}
+        QLineEdit:hover {{
+            border-color: {c['accent']};
+        }}
+        QLineEdit:focus {{
+            border-color: {c['accent']};
+        }}
+        QListView::item:hover, QListWidget::item:hover {{
+            background-color: {c['selection_bg_soft']};
+            border-radius: 6px;
+        }}
+        QListView::item:selected, QListWidget::item:selected {{
+            background-color: {c['selection_bg_soft']};
+            color: {c['accent']};
+            border-radius: 6px;
+        }}
+        QMenu {{
+            background-color: {c['surface']};
+            border: 1px solid {c['border']};
+            border-radius: 8px;
+            padding: 6px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            color: {c['text_primary']};
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin: 1px 0;
+        }}
+        QMenu::item:selected {{
+            background-color: {c['selection_bg_soft']};
+            color: {c['accent']};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {c['border']};
+            margin: 6px 4px;
         }}
     """
 

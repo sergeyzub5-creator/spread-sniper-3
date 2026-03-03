@@ -61,20 +61,15 @@ class NetworkStatusBar(QFrame):
 
         self.network_capsule = QFrame()
         self.network_capsule.setObjectName("networkCapsule")
-        self.network_capsule.setMinimumWidth(184)
+        self.network_capsule.setFixedWidth(44)
         self.network_capsule.setFixedHeight(34)
 
         network_layout = QHBoxLayout(self.network_capsule)
-        network_layout.setContentsMargins(10, 1, 10, 1)
-        network_layout.setSpacing(7)
+        network_layout.setContentsMargins(0, 0, 0, 0)
+        network_layout.setSpacing(0)
 
         self.net_indicator = WifiIndicator()
-        network_layout.addWidget(self.net_indicator)
-
-        self.wifi_label = QLabel("")
-        self.wifi_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        network_layout.addWidget(self.wifi_label)
-        network_layout.addStretch()
+        network_layout.addWidget(self.net_indicator, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.network_capsule)
 
@@ -141,10 +136,7 @@ class NetworkStatusBar(QFrame):
                 theme_color("net_idle"),
                 theme_color("net_idle_border"),
             )
-            self.wifi_label.setText(tr("status.net_checking"))
-            self.wifi_label.setStyleSheet(
-                f"color: {theme_color('text_muted')}; font-size: 15px; font-weight: 700;"
-            )
+            self.network_capsule.setToolTip(tr("status.net_checking"))
             return
 
         if self._online:
@@ -152,19 +144,13 @@ class NetworkStatusBar(QFrame):
                 theme_color("net_online"),
                 theme_color("net_online_border"),
             )
-            self.wifi_label.setText(tr("status.net_online"))
-            self.wifi_label.setStyleSheet(
-                f"color: {theme_color('success')}; font-size: 15px; font-weight: 700;"
-            )
+            self.network_capsule.setToolTip(tr("status.net_online"))
         else:
             self.net_indicator.set_colors(
                 theme_color("net_offline"),
                 theme_color("net_offline_border"),
             )
-            self.wifi_label.setText(tr("status.net_offline"))
-            self.wifi_label.setStyleSheet(
-                f"color: {theme_color('danger')}; font-size: 15px; font-weight: 700;"
-            )
+            self.network_capsule.setToolTip(tr("status.net_offline"))
 
     def apply_theme(self):
         self.setStyleSheet(
@@ -209,10 +195,6 @@ class NetworkStatusBar(QFrame):
                 );
                 border: 1px solid {theme_color('border')};
                 border-radius: 10px;
-            }}
-            QLabel {{
-                font-size: 15px;
-                font-weight: 700;
             }}
             """
         )
