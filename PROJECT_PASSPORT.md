@@ -1,6 +1,6 @@
 ﻿# Паспорт проекта `spread-sniper-3`
 
-Актуально на: 2 марта 2026  
+Актуально на: 3 марта 2026  
 Корень проекта: `C:\Users\Разраб\projektvscod`
 
 ## 1) Назначение проекта
@@ -54,23 +54,29 @@ python main.py
 - эмитит `status_updated` для UI.
 
 4. `ui/tabs/exchanges_tab.py`
-- отображает подключенные биржи,
-- открывает окно выбора новой биржи,
-- открывает отдельное окно ввода API-ключей,
-- добавляет биржу в общий список только после успешного подключения,
-- содержит массовое действие «Закрыть все позиции» с подтверждением и отчётом,
-- содержит действие «Закрыть позиции» на каждой карточке биржи,
-- учитывает режим быстрой торговли (подтверждения можно отключать).
+- теперь тонкий UI-оркестратор вкладки (layout, стили, retranslate),
+- бизнес-логика вынесена в `features/exchanges/controllers/*`,
+- диалоги подключения вынесены в `features/exchanges/dialogs/*`,
+- вкладка связывает сигналы UI с независимыми логическими блоками.
 
 5. `ui/tabs/spread_sniping_tab.py`
-- теперь выполняет роль UI-панели вкладки (визуальные элементы, обработка событий, минимум логики),
+- выполняет роль UI-панели/компоновщика (визуальные элементы + привязка сигналов),
+- логика и стили вынесены в `features/spread_sniping/controllers/*`,
 - сетевые и биржевые блоки вынесены в отдельные модули:
   - `features/spread_sniping/models/column_context.py` (состояние и ссылки UI для колонки),
-  - `features/spread_sniping/controllers/selection_mixin.py` (выбор биржи/пары, автокомплит, popup),
+  - `features/spread_sniping/controllers/theme_mixin.py` (тема/stylesheet вкладки),
+  - `features/spread_sniping/controllers/display_mixin.py` (расчёт/режимы отображения спреда),
+  - `features/spread_sniping/controllers/selection_mixin.py` (агрегатор selection-блоков),
+  - `features/spread_sniping/controllers/selection_state_mixin.py` (state и выбор биржи/пары),
+  - `features/spread_sniping/controllers/pair_loader_mixin.py` (асинхронная загрузка/кэш/retry списка пар),
+  - `features/spread_sniping/controllers/pair_suggestions_mixin.py` (debounce и ранжирование автокомплита),
+  - `features/spread_sniping/controllers/pair_input_session_mixin.py` (UX-сессия ввода пары и popup lifecycle),
   - `features/spread_sniping/controllers/quote_mixin.py` (состояния котировок и управление стримом),
+  - `features/spread_sniping/controllers/strategy_mixin.py` (настройки стратегии и синхронизация состояния),
   - `features/spread_sniping/controllers/trade_mixin.py` (временный торговый блок BUY/SELL),
   - `features/spread_sniping/dialogs/connected_exchange_picker_dialog.py` (выбор биржи),
   - `features/spread_sniping/services/binance_book_ticker_stream.py` (WS поток котировок),
+  - `features/spread_sniping/services/strategy_engine.py` (расчёт сигналов входа/выхода стратегии),
   - `features/spread_sniping/services/spread_runtime_service.py` (не-UI сценарная логика вкладки),
   - `core/exchange/adapters/binance/spread.py` (Binance-специфика для спреда: пары аккаунта, snapshot bid/ask).
 
@@ -85,7 +91,7 @@ python main.py
 ## 4.1) Слои и границы ответственности (обновлено)
 
 1. `ui/*` — только представление и пользовательские действия.
-2. `features/*` — сценарии конкретных вкладок/режимов, orchestration.
+2. `features/*` — сценарии конкретных вкладок/режимов, orchestration и переиспользуемые блоки.
 3. `core/exchange/*` — общая биржевая инфраструктура и коннекторы.
 4. `core/exchange/adapters/*` — биржевая прикладная логика по направлениям (order/price/book/account).
 5. `core/data/*`, `core/i18n/*`, `ui/styles/*` — кросс-срезовые подсистемы.
@@ -174,10 +180,12 @@ python main.py
   - `ui/widgets/exchange_panel.py`
 
 - Логика вкладки бирж/окна добавления:
-  - `ui/tabs/exchanges_tab.py`
+  - UI-оркестратор: `ui/tabs/exchanges_tab.py`
+  - Контроллеры: `features/exchanges/controllers/`
+  - Диалоги: `features/exchanges/dialogs/`
 
 - Логика вкладки снайпинга спреда:
-  - UI: `ui/tabs/spread_sniping_tab.py`
+  - UI-оркестратор: `ui/tabs/spread_sniping_tab.py`
   - Модель колонки: `features/spread_sniping/models/column_context.py`
   - Контроллеры: `features/spread_sniping/controllers/`
   - Диалоги: `features/spread_sniping/dialogs/`
@@ -205,6 +213,13 @@ python main.py
 7. Карточки обновляют статус, индикатор, баланс, позиции и PnL.
 8. Закрытие позиций (по одной бирже или массово) выполняется в фоне через `Worker`/`ThreadManager`.
 9. Если включен режим быстрой торговли, шаги подтверждения перед торговыми действиями пропускаются.
+
+## 11.1) Архитектурное правило (обязательно)
+
+1. Вкладка в `ui/tabs/*` не содержит биржевой/торговой бизнес-логики.
+2. Вкладка должна собираться из блоков `features/*` (mixins/services/models/dialogs).
+3. Любой новый сценарий делается как самостоятельный блок в `features/*`, затем подключается в вкладку.
+4. Повторное использование блоков между вкладками выполняется импортом зависимостей, без копирования кода.
 
 ## 12) Бэкап и служебные команды
 
@@ -239,13 +254,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\snapshot.ps1
 3. `ui/main_window.py`
 4. `core/exchange/manager.py`
 5. `ui/tabs/exchanges_tab.py`
-6. `ui/tabs/spread_sniping_tab.py`
-7. `features/spread_sniping/controllers/selection_mixin.py`
-8. `features/spread_sniping/models/column_context.py`
-9. `features/spread_sniping/controllers/quote_mixin.py`
-10. `features/spread_sniping/controllers/trade_mixin.py`
-11. `features/spread_sniping/services/spread_runtime_service.py`
-12. `core/exchange/adapters/binance/spread.py`
-13. `ui/widgets/exchange_panel.py`
-14. `ui/widgets/brand_header.py`
-15. `core/exchange/factory.py` + `core/exchange/catalog.py`
+6. `features/exchanges/controllers/`
+7. `features/exchanges/dialogs/`
+8. `ui/tabs/spread_sniping_tab.py`
+9. `features/spread_sniping/controllers/selection_mixin.py`
+10. `features/spread_sniping/controllers/selection_state_mixin.py`
+11. `features/spread_sniping/controllers/pair_loader_mixin.py`
+12. `features/spread_sniping/controllers/pair_suggestions_mixin.py`
+13. `features/spread_sniping/controllers/pair_input_session_mixin.py`
+14. `features/spread_sniping/controllers/display_mixin.py`
+15. `features/spread_sniping/controllers/strategy_mixin.py`
+16. `features/spread_sniping/controllers/theme_mixin.py`
+17. `features/spread_sniping/services/spread_runtime_service.py`
+18. `core/exchange/adapters/binance/spread.py`
+19. `ui/widgets/exchange_panel.py`
+20. `ui/widgets/brand_header.py`
+21. `core/exchange/factory.py` + `core/exchange/catalog.py`

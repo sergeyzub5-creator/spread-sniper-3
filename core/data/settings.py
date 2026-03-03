@@ -9,6 +9,7 @@ class SettingsManager:
     FAST_TRADE_MODE_KEY = "trading/fast_mode"
     SPREAD_EXCHANGE_KEY_TMPL = "spread/col{index}/exchange"
     SPREAD_PAIR_KEY_TMPL = "spread/col{index}/pair"
+    SPREAD_STRATEGY_KEY_TMPL = "spread/strategy/{name}"
 
     def __new__(cls):
         if cls._instance is None:
@@ -78,3 +79,23 @@ class SettingsManager:
         exchange_name = str(self.get_value(exchange_key, "") or "").strip()
         pair_symbol = str(self.get_value(pair_key, "") or "").strip()
         return exchange_name, pair_symbol
+
+    def save_spread_strategy_config(self, config_dict):
+        payload = config_dict if isinstance(config_dict, dict) else {}
+        for key, value in payload.items():
+            name = str(key or "").strip()
+            if not name:
+                continue
+            settings_key = self.SPREAD_STRATEGY_KEY_TMPL.format(name=name)
+            self.set_value(settings_key, value)
+
+    def load_spread_strategy_config(self, default_dict=None):
+        defaults = default_dict if isinstance(default_dict, dict) else {}
+        result = dict(defaults)
+        for key in defaults.keys():
+            name = str(key or "").strip()
+            if not name:
+                continue
+            settings_key = self.SPREAD_STRATEGY_KEY_TMPL.format(name=name)
+            result[name] = self.get_value(settings_key, defaults[key])
+        return result

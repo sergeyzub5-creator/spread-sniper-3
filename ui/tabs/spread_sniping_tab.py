@@ -18,8 +18,11 @@ from PySide6.QtWidgets import (
 from core.data.settings import SettingsManager
 from core.i18n import tr
 from features.spread_sniping.controllers import (
+    SpreadDisplayMixin,
     SpreadQuoteMixin,
     SpreadSelectionMixin,
+    SpreadStrategyMixin,
+    SpreadThemeMixin,
 )
 from features.spread_sniping.models import SpreadColumnContext
 from features.spread_sniping.services.bitget_book_ticker_stream import (
@@ -31,12 +34,15 @@ from features.spread_sniping.services.binance_book_ticker_stream import (
 from features.spread_sniping.services.spread_runtime_service import (
     SpreadRuntimeService,
 )
-from ui.styles import theme_color
+from features.spread_sniping.services.strategy_engine import SpreadStrategyEngine
 
 
 class SpreadSnipingTab(
+    SpreadThemeMixin,
+    SpreadDisplayMixin,
     SpreadSelectionMixin,
     SpreadQuoteMixin,
+    SpreadStrategyMixin,
     QWidget,
 ):
     POPULAR_PAIRS = (
@@ -66,7 +72,6 @@ class SpreadSnipingTab(
         "signal_split",
         "minimal_pro",
     )
-
     def __init__(self, exchange_manager, parent=None):
         super().__init__(parent)
         self.exchange_manager = exchange_manager
@@ -77,6 +82,8 @@ class SpreadSnipingTab(
             exchange_manager=self.exchange_manager,
             popular_pairs=self.POPULAR_PAIRS,
         )
+        self._strategy_engine = SpreadStrategyEngine()
+        self._init_strategy_state()
 
         self._columns = [SpreadColumnContext(index=1), SpreadColumnContext(index=2)]
         self._columns_map = {column.index: column for column in self._columns}
@@ -130,8 +137,10 @@ class SpreadSnipingTab(
 
         selectors_row = self._build_selectors_with_spread_row()
         quotes_row = self._build_dual_row(self._create_quote_widget)
+        strategy_panel = self._create_strategy_panel()
         card_layout.addLayout(selectors_row)
         card_layout.addLayout(quotes_row)
+        card_layout.addWidget(strategy_panel)
         card_layout.addStretch()
 
         layout.addWidget(self.container)
@@ -141,6 +150,8 @@ class SpreadSnipingTab(
         self._restore_spread_selection()
         self._refresh_selector_state()
         self._refresh_spread_display()
+        self._sync_strategy_fields_from_config()
+        self._update_strategy_state_label()
 
     def _build_dual_row(self, widget_factory):
         row = QHBoxLayout()
@@ -382,334 +393,15 @@ class SpreadSnipingTab(
         column.quote_ask_qty_label = ask_qty_label
         return frame
 
-    def apply_theme(self):
-        c_surface = theme_color("surface")
-        c_window = theme_color("window_bg")
-        c_border = theme_color("border")
-        c_primary = theme_color("text_primary")
-        c_muted = theme_color("text_muted")
-        c_alt = theme_color("surface_alt")
-        c_accent = theme_color("accent")
-        c_success = theme_color("success")
-        c_danger = theme_color("danger")
-        c_capsule_border = self._rgba(c_accent, 0.52)
-        c_capsule_glow = self._rgba(c_accent, 0.18)
-        c_capsule_mid = self._rgba(c_alt, 0.95)
-        c_capsule_hover = self._rgba(c_accent, 0.24)
-        c_cheap_border = self._rgba(c_success, 0.76)
-        c_cheap_tone = self._rgba(c_success, 0.20)
-        c_cheap_hover = self._rgba(c_success, 0.30)
-        c_exp_border = self._rgba(c_danger, 0.76)
-        c_exp_tone = self._rgba(c_danger, 0.20)
-        c_exp_hover = self._rgba(c_danger, 0.30)
-
-        self.container.setStyleSheet(
-            f"""
-            QFrame#spreadContainer {{
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {self._rgba(c_alt, 0.96)},
-                    stop: 1 {self._rgba(c_window, 0.98)}
-                );
-                border: 1px solid {self._rgba(c_border, 0.58)};
-                border-radius: 12px;
-            }}
-            QPushButton#exchangeSelector {{
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {c_capsule_glow},
-                    stop: 0.50 {c_capsule_mid},
-                    stop: 1 {c_surface}
-                );
-                color: {c_primary};
-                border: 1px solid {c_capsule_border};
-                border-radius: 22px;
-                min-height: 44px;
-                font-size: 13px;
-                font-weight: 700;
-                padding: 8px 12px;
-            }}
-            QPushButton#exchangeSelector:hover {{
-                border-color: {c_accent};
-                background-color: {c_capsule_hover};
-            }}
-            QPushButton#exchangeSelector[toneRole="cheap"] {{
-                border-color: {c_cheap_border};
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {c_cheap_tone},
-                    stop: 0.50 {c_capsule_mid},
-                    stop: 1 {c_surface}
-                );
-            }}
-            QPushButton#exchangeSelector[toneRole="cheap"]:hover {{
-                border-color: {c_success};
-                background-color: {c_cheap_hover};
-            }}
-            QPushButton#exchangeSelector[toneRole="expensive"] {{
-                border-color: {c_exp_border};
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {c_exp_tone},
-                    stop: 0.50 {c_capsule_mid},
-                    stop: 1 {c_surface}
-                );
-            }}
-            QPushButton#exchangeSelector[toneRole="expensive"]:hover {{
-                border-color: {c_danger};
-                background-color: {c_exp_hover};
-            }}
-            QPushButton#exchangeSelector:disabled {{
-                color: {c_muted};
-                border-color: {c_border};
-                background-color: {c_alt};
-            }}
-            QLineEdit#pairSelector {{
-                background-color: {c_alt};
-                color: {c_primary};
-                border: 1px solid {c_capsule_border};
-                border-radius: 14px;
-                min-height: 32px;
-                padding: 6px 10px;
-                font-size: 12px;
-                font-weight: 600;
-            }}
-            QLineEdit#pairSelector:hover {{
-                border-color: {c_accent};
-                background-color: {c_capsule_hover};
-            }}
-            QLineEdit#pairSelector:focus {{
-                border-color: {c_accent};
-            }}
-            QLineEdit#pairSelector:disabled {{
-                color: {c_muted};
-                border-color: {c_border};
-                background-color: {c_surface};
-            }}
-            QWidget#quotePanel {{
-                background-color: transparent;
-                border: none;
-                border-radius: 0px;
-            }}
-            QFrame#quoteSideCapsule {{
-                background-color: {c_surface};
-                border: none;
-                border-radius: 8px;
-            }}
-            QFrame#quoteMidDivider {{
-                background-color: {self._rgba(c_border, 0.55)};
-                border: none;
-                min-height: 18px;
-                max-height: 18px;
-            }}
-            QFrame#spreadCenterColumn {{
-                background-color: transparent;
-                border: none;
-                border-radius: 18px;
-            }}
-            QFrame#spreadValueFrame {{
-                background-color: transparent;
-                border: none;
-                border-radius: 14px;
-            }}
-            QFrame#spreadValueInner {{
-                background-color: transparent;
-                border: none;
-                border-radius: 14px;
-            }}
-            QFrame#spreadValueFrame[mode="select"][variant="neon_frame"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueInner[mode="select"][variant="neon_frame"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueFrame[mode="select"][variant="glass_slate"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueInner[mode="select"][variant="glass_slate"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueFrame[mode="select"][variant="signal_split"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueInner[mode="select"][variant="signal_split"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueFrame[mode="select"][variant="minimal_pro"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueInner[mode="select"][variant="minimal_pro"] {{
-                background-color: transparent;
-                border: none;
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="neon_frame"] {{
-                background-color: {self._rgba(c_surface, 0.96)};
-                border: 1px solid {self._rgba(c_accent, 0.45)};
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="glass_slate"] {{
-                background-color: {self._rgba(c_surface, 0.96)};
-                border: 1px solid {self._rgba(c_border, 0.74)};
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"] {{
-                background-color: {self._rgba(c_surface, 0.96)};
-                border-top: 1px solid {self._rgba(c_border, 0.62)};
-                border-bottom: 1px solid {self._rgba(c_border, 0.62)};
-                border-left: 3px solid {self._rgba(c_border, 0.76)};
-                border-right: 3px solid {self._rgba(c_border, 0.76)};
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"][edgeTone="left_cheap"] {{
-                border-left: 3px solid {self._rgba(c_success, 0.92)};
-                border-right: 3px solid {self._rgba(c_danger, 0.92)};
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="signal_split"][edgeTone="right_cheap"] {{
-                border-left: 3px solid {self._rgba(c_danger, 0.92)};
-                border-right: 3px solid {self._rgba(c_success, 0.92)};
-            }}
-            QFrame#spreadValueFrame[mode="spread"][variant="minimal_pro"] {{
-                background-color: transparent;
-                border: 1px solid {self._rgba(c_border, 0.82)};
-            }}
-            QFrame#spreadValueInner[mode="spread"] {{
-                background-color: {self._rgba(c_alt, 0.95)};
-                border: none;
-                border-radius: 12px;
-            }}
-            QFrame#spreadValueInner[mode="spread"][variant="minimal_pro"] {{
-                background-color: transparent;
-            }}
-            QPushButton#spreadActionButton {{
-                color: {c_primary};
-                border-radius: 14px;
-                font-size: 20px;
-                font-weight: 700;
-                padding: 6px 12px;
-            }}
-            QPushButton#spreadActionButton[variant="neon_frame"] {{
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 0, y2: 1,
-                    stop: 0 {self._rgba(c_accent, 0.20)},
-                    stop: 1 {self._rgba(c_surface, 0.88)}
-                );
-                border: 1px solid {self._rgba(c_accent, 0.72)};
-            }}
-            QPushButton#spreadActionButton[variant="neon_frame"]:hover {{
-                background-color: {self._rgba(c_accent, 0.28)};
-            }}
-            QPushButton#spreadActionButton[variant="glass_slate"] {{
-                background-color: {self._rgba(c_surface, 0.78)};
-                border: 1px solid {self._rgba(c_border, 0.74)};
-            }}
-            QPushButton#spreadActionButton[variant="glass_slate"]:hover {{
-                background-color: {self._rgba(c_alt, 0.88)};
-            }}
-            QPushButton#spreadActionButton[variant="signal_split"] {{
-                background-color: {self._rgba(c_surface, 0.84)};
-                border: 1px solid {self._rgba(c_border, 0.74)};
-            }}
-            QPushButton#spreadActionButton[variant="signal_split"]:hover {{
-                background-color: {self._rgba(c_alt, 0.92)};
-            }}
-            QPushButton#spreadActionButton[variant="minimal_pro"] {{
-                background-color: transparent;
-                border: 1px solid {self._rgba(c_border, 0.82)};
-            }}
-            QPushButton#spreadActionButton[variant="minimal_pro"]:hover {{
-                background-color: {self._rgba(c_alt, 0.58)};
-            }}
-            QPushButton#spreadActionButton:disabled {{
-                color: {c_muted};
-                background-color: transparent;
-            }}
-            QLabel#spreadValueLabel {{
-                background-color: transparent;
-                border: none;
-                font-size: 56px;
-                font-weight: 800;
-                letter-spacing: 0.5px;
-            }}
-            QLabel#spreadValueLabel[variant="neon_frame"] {{
-                color: {c_accent};
-            }}
-            QLabel#spreadValueLabel[variant="glass_slate"] {{
-                color: {c_primary};
-            }}
-            QLabel#spreadValueLabel[variant="signal_split"] {{
-                color: {c_primary};
-            }}
-            QLabel#spreadValueLabel[variant="minimal_pro"] {{
-                color: {c_primary};
-            }}
-            QLabel#spreadValueLabel[empty="true"] {{
-                color: {c_muted};
-            }}
-            QLabel#bidPriceText {{
-                color: {theme_color('success')};
-                font-size: 11px;
-                font-weight: 700;
-                padding-left: 4px;
-            }}
-            QLabel#askPriceText {{
-                color: {theme_color('danger')};
-                font-size: 11px;
-                font-weight: 700;
-                padding-left: 4px;
-            }}
-            QLabel#quoteQtyText {{
-                color: {c_primary};
-                font-size: 11px;
-                font-weight: 700;
-                padding-left: 4px;
-            }}
-        """
-        )
-
-        popup_style = f"""
-            QListView#pairPopup {{
-                background-color: {theme_color('window_bg')};
-                color: {c_primary};
-                border: 1px solid {c_border};
-                border-radius: 8px;
-                padding: 4px;
-                outline: none;
-                font-size: 12px;
-            }}
-            QListView#pairPopup::item {{
-                padding: 6px 8px;
-                border-radius: 6px;
-            }}
-            QListView#pairPopup::item:hover {{
-                background-color: {self._rgba(c_accent, 0.20)};
-                color: {c_primary};
-            }}
-            QListView#pairPopup::item:selected {{
-                background-color: {theme_color('selection_bg_soft')};
-                color: {c_accent};
-                border: 1px solid {self._rgba(c_accent, 0.45)};
-            }}
-        """
-
-        for column in self._iter_columns():
-            if column.pair_completer is not None:
-                popup = column.pair_completer.popup()
-                popup.setObjectName("pairPopup")
-                popup.setStyleSheet(popup_style)
-
-        self._apply_spread_visual_variant()
-
     def retranslate_ui(self):
         if hasattr(self, "spread_select_btn"):
             self.spread_select_btn.setText(tr("action.select"))
+        self._retranslate_strategy_ui()
         self._update_selector_texts()
         self._refresh_pair_controls()
         self._refresh_all_quote_labels()
         self._refresh_spread_display()
+        self._update_strategy_state_label()
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.MouseButtonPress:
@@ -727,291 +419,3 @@ class SpreadSnipingTab(
                     self._cancel_pair_input_sessions()
                     self._hide_all_pair_popups()
         return super().eventFilter(watched, event)
-
-    @staticmethod
-    def _to_float(value):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _format_price(value):
-        numeric = SpreadSnipingTab._to_float(value)
-        if numeric is None:
-            return "--"
-        text = f"{numeric:.8f}".rstrip("0").rstrip(".")
-        return text if text else "0"
-
-    @staticmethod
-    def _normalize_pair(value):
-        text = str(value or "").strip().upper()
-        if not text:
-            return ""
-        for ch in ("/", "-", "_", " "):
-            text = text.replace(ch, "")
-        return text
-
-    def _normalize_pairs(self, pairs):
-        result = []
-        seen = set()
-        for raw in pairs or []:
-            symbol = self._normalize_pair(raw)
-            if not symbol or symbol in seen:
-                continue
-            seen.add(symbol)
-            result.append(symbol)
-        return result
-
-    def _persist_spread_selection(self, index):
-        column = self._column(index)
-        if column is None:
-            return
-        self.settings_manager.save_spread_column_selection(
-            index=index,
-            exchange_name=column.selected_exchange or "",
-            pair_symbol=column.selected_pair or "",
-        )
-
-    def _restore_spread_selection(self):
-        for column in self._iter_columns():
-            exchange_name, pair_symbol = self.settings_manager.load_spread_column_selection(column.index)
-            normalized_exchange = str(exchange_name or "").strip()
-            normalized_pair = self._normalize_pair(pair_symbol)
-
-            if normalized_exchange:
-                self._set_selected_exchange(column.index, normalized_exchange)
-            else:
-                self._set_selected_exchange(column.index, None)
-
-            if normalized_exchange and normalized_pair:
-                self._set_selected_pair(column.index, normalized_pair)
-                if column.pair_edit is not None:
-                    column.pair_edit.blockSignals(True)
-                    column.pair_edit.setText(normalized_pair)
-                    column.pair_edit.blockSignals(False)
-
-    def _calculate_spread_percent(self):
-        state = self._calculate_spread_state()
-        return state.get("percent")
-
-    def _calculate_spread_state(self):
-        left = self._column(1)
-        right = self._column(2)
-        if left is None or right is None:
-            return {"percent": None, "cheap_index": None, "expensive_index": None}
-
-        if not left.selected_exchange or not right.selected_exchange:
-            return {"percent": None, "cheap_index": None, "expensive_index": None}
-        if not left.selected_pair or not right.selected_pair:
-            return {"percent": None, "cheap_index": None, "expensive_index": None}
-
-        bid_1 = self._to_float(left.quote_bid)
-        ask_1 = self._to_float(left.quote_ask)
-        bid_2 = self._to_float(right.quote_bid)
-        ask_2 = self._to_float(right.quote_ask)
-        if not bid_1 or not ask_1 or not bid_2 or not ask_2:
-            return {"percent": None, "cheap_index": None, "expensive_index": None}
-        if bid_1 <= 0 or ask_1 <= 0 or bid_2 <= 0 or ask_2 <= 0:
-            return {"percent": None, "cheap_index": None, "expensive_index": None}
-
-        edge_1 = (bid_1 - ask_2) / ask_2 if ask_2 else 0.0
-        edge_2 = (bid_2 - ask_1) / ask_1 if ask_1 else 0.0
-
-        if edge_1 >= edge_2:
-            best_edge = edge_1
-            expensive_index = 1
-            cheap_index = 2
-        else:
-            best_edge = edge_2
-            expensive_index = 2
-            cheap_index = 1
-
-        percent = abs(best_edge) * 100.0
-        if percent <= 0:
-            cheap_index = None
-            expensive_index = None
-
-        return {
-            "percent": percent,
-            "cheap_index": cheap_index,
-            "expensive_index": expensive_index,
-        }
-
-    def _apply_exchange_tone(self, index, role):
-        column = self._column(index)
-        if column is None or column.selector_button is None:
-            return
-
-        role_value = str(role or "neutral")
-        button = column.selector_button
-        if button.property("toneRole") == role_value:
-            return
-        button.setProperty("toneRole", role_value)
-        button.style().unpolish(button)
-        button.style().polish(button)
-        button.update()
-
-    def _set_spread_edge_tone(self, cheap_index, expensive_index):
-        frame = getattr(self, "spread_value_frame", None)
-        if frame is None:
-            return
-
-        tone = "neutral"
-        if cheap_index == 1 and expensive_index == 2:
-            tone = "left_cheap"
-        elif cheap_index == 2 and expensive_index == 1:
-            tone = "right_cheap"
-
-        if frame.property("edgeTone") == tone:
-            return
-        frame.setProperty("edgeTone", tone)
-        frame.style().unpolish(frame)
-        frame.style().polish(frame)
-        frame.update()
-
-    @classmethod
-    def _normalize_spread_variant(cls, variant_code):
-        code = str(variant_code or "").strip().lower()
-        if code in cls.SUPPORTED_SPREAD_VARIANTS:
-            return code
-        return "neon_frame"
-
-    def spread_visual_variant(self):
-        return self._spread_visual_variant
-
-    @staticmethod
-    def _repolish_widget(widget):
-        if widget is None:
-            return
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
-        widget.update()
-
-    def _apply_spread_visual_variant(self):
-        variant = self._spread_visual_variant
-        frame = getattr(self, "spread_value_frame", None)
-        inner = getattr(self, "spread_value_inner", None)
-        action_btn = getattr(self, "spread_select_btn", None)
-        value_label = getattr(self, "spread_value_label", None)
-        for widget in (frame, inner, action_btn, value_label):
-            if widget is None:
-                continue
-            if widget.property("variant") == variant:
-                continue
-            widget.setProperty("variant", variant)
-            self._repolish_widget(widget)
-
-    def set_spread_visual_variant(self, variant_code):
-        normalized = self._normalize_spread_variant(variant_code)
-        if normalized == self._spread_visual_variant:
-            return
-        self._spread_visual_variant = normalized
-        self._apply_spread_visual_variant()
-        self.apply_theme()
-        self._refresh_spread_display()
-
-    def _set_spread_pending_selection(self):
-        if not getattr(self, "_spread_armed", False):
-            return
-        self._spread_armed = False
-        self._refresh_spread_display()
-
-    def _on_spread_select_clicked(self):
-        state = self._calculate_spread_state()
-        if state.get("percent") is None:
-            return
-        self._spread_armed = True
-        self._refresh_spread_display()
-
-    def _set_spread_frame_mode(self, mode):
-        frame = getattr(self, "spread_value_frame", None)
-        inner = getattr(self, "spread_value_inner", None)
-        outer_layout = getattr(self, "spread_outer_layout", None)
-        stack = getattr(self, "spread_stack", None)
-        if frame is None or inner is None:
-            return
-        mode_value = str(mode or "spread")
-        changed = False
-        if frame.property("mode") != mode_value:
-            frame.setProperty("mode", mode_value)
-            frame.style().unpolish(frame)
-            frame.style().polish(frame)
-            frame.update()
-            changed = True
-        if inner.property("mode") != mode_value:
-            inner.setProperty("mode", mode_value)
-            inner.style().unpolish(inner)
-            inner.style().polish(inner)
-            inner.update()
-            changed = True
-
-        if outer_layout is not None:
-            if mode_value == "spread":
-                # Show a visible outer frame ring and keep the dark inner layer smaller.
-                outer_layout.setContentsMargins(2, 2, 2, 2)
-            else:
-                outer_layout.setContentsMargins(0, 0, 0, 0)
-        if stack is not None:
-            stack.setContentsMargins(2, 2, 2, 2)
-
-        if not changed:
-            return
-
-    def _refresh_spread_display(self):
-        label = getattr(self, "spread_value_label", None)
-        stack = getattr(self, "spread_stack", None)
-        select_btn = getattr(self, "spread_select_btn", None)
-        if label is None or stack is None or select_btn is None:
-            return
-
-        state = self._calculate_spread_state()
-        spread_value = state.get("percent")
-        cheap_index = state.get("cheap_index")
-        expensive_index = state.get("expensive_index")
-
-        if not self._spread_armed:
-            self._set_spread_frame_mode("select")
-            stack.setCurrentWidget(select_btn)
-            select_btn.setEnabled(spread_value is not None)
-            self._apply_exchange_tone(1, "neutral")
-            self._apply_exchange_tone(2, "neutral")
-            self._set_spread_edge_tone(None, None)
-            return
-
-        self._set_spread_frame_mode("spread")
-        stack.setCurrentWidget(label)
-
-        self._apply_exchange_tone(1, "neutral")
-        self._apply_exchange_tone(2, "neutral")
-        if cheap_index in {1, 2}:
-            self._apply_exchange_tone(cheap_index, "cheap")
-        if expensive_index in {1, 2}:
-            self._apply_exchange_tone(expensive_index, "expensive")
-        self._set_spread_edge_tone(cheap_index, expensive_index)
-
-        is_empty = spread_value is None
-        if is_empty:
-            label.setText(tr("spread.center_empty"))
-        else:
-            label.setText(tr("spread.center_value", value=f"{spread_value:.2f}"))
-
-        if label.property("empty") != is_empty:
-            label.setProperty("empty", is_empty)
-            label.style().unpolish(label)
-            label.style().polish(label)
-        label.update()
-
-    @staticmethod
-    def _rgba(hex_color, alpha):
-        color = str(hex_color or "").strip()
-        if color.startswith("#") and len(color) == 7:
-            try:
-                r = int(color[1:3], 16)
-                g = int(color[3:5], 16)
-                b = int(color[5:7], 16)
-                a = max(0.0, min(1.0, float(alpha)))
-                return f"rgba({r}, {g}, {b}, {a:.3f})"
-            except ValueError:
-                return color
-        return color
