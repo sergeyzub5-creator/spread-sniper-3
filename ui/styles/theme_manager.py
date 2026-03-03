@@ -5,10 +5,10 @@ from PySide6.QtCore import QObject, Signal
 
 THEMES = {
     "dark": {
-        "window_bg": "#0a0c10",
-        "surface": "#14181c",
-        "surface_alt": "#1e2429",
-        "border": "#2a343c",
+        "window_bg": "#07090d",
+        "surface": "#10141a",
+        "surface_alt": "#181e26",
+        "border": "#34404a",
         "text_primary": "#e8eef2",
         "text_muted": "#a0b0c0",
         "accent": "#7aa2f7",
@@ -63,10 +63,10 @@ THEMES = {
         "net_offline_border": "#b91c1c",
     },
     "steel": {
-        "window_bg": "#2b2c30",
-        "surface": "#35373c",
-        "surface_alt": "#3f4248",
-        "border": "#5c6068",
+        "window_bg": "#24262a",
+        "surface": "#2e3136",
+        "surface_alt": "#3a3e45",
+        "border": "#646b75",
         "text_primary": "#f0f2f5",
         "text_muted": "#b9bec7",
         "accent": "#9cb3d8",
@@ -177,27 +177,37 @@ def build_app_stylesheet() -> str:
             color: {c['text_primary']};
         }}
         QTabWidget::pane {{
-            background-color: {c['surface']};
-            border: 1px solid {c['border']};
-            border-radius: 6px;
+            background: qlineargradient(
+                x1: 0, y1: 0, x2: 0, y2: 1,
+                stop: 0 {c['surface_alt']},
+                stop: 1 {c['surface']}
+            );
+            border-top: 1px solid {c['border']};
+            border-left: none;
+            border-right: none;
+            border-bottom: none;
+            border-radius: 0px;
         }}
         QTabBar::tab {{
-            background-color: {c['surface_alt']};
+            background-color: {c['window_bg']};
             color: {c['text_muted']};
             border: 1px solid {c['border']};
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
-            padding: 8px 16px;
-            margin-right: 2px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            border-bottom: none;
+            padding: 7px 16px;
+            margin-right: 4px;
+            font-weight: 600;
         }}
-        QTabBar::tab:hover {{
-            background-color: {c['accent_bg']};
+        QTabBar::tab:!selected:hover {{
+            background-color: {c['surface']};
             color: {c['text_primary']};
             border-color: {c['accent']};
         }}
         QTabBar::tab:selected {{
-            background-color: {c['tab_selected_bg']};
+            background-color: {c['surface_alt']};
             color: {c['accent']};
+            border-color: {c['accent']};
         }}
         QTabBar::tab:selected:hover {{
             background-color: {c['tab_selected_bg']};

@@ -52,8 +52,9 @@ class BinanceBookTickerStream(QObject):
             pass
 
         thread = self._thread
+        # Do not block UI thread on websocket shutdown; stale ticks are filtered by state.
         if thread and thread.is_alive() and threading.current_thread() is not thread:
-            thread.join(timeout=1.5)
+            thread.join(timeout=0.05)
         self._thread = None
 
     @staticmethod
@@ -142,4 +143,3 @@ class BinanceBookTickerStream(QObject):
 
     def _on_close(self, _ws, _code, _msg):
         return
-

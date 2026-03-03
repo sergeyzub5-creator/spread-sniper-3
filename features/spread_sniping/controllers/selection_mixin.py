@@ -423,11 +423,47 @@ class SpreadSelectionMixin:
         if query != self._get_selected_pair(index):
             self._set_selected_pair(index, None)
 
+        self._schedule_pair_suggestions(index, query)
+
+    def _schedule_pair_suggestions(self, index, query):
+        timers = getattr(self, "_pair_suggest_timers", None)
+        if timers is None:
+            timers = {}
+            self._pair_suggest_timers = timers
+
+        queries = getattr(self, "_pair_suggest_queries", None)
+        if queries is None:
+            queries = {}
+            self._pair_suggest_queries = queries
+
+        normalized_query = self._normalize_pair(query)
+        queries[index] = normalized_query
+
+        timer = timers.get(index)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda idx=index: self._apply_scheduled_pair_suggestions(idx))
+            timers[index] = timer
+
+        # Small debounce keeps typing responsive on large pair lists.
+        timer.start(55)
+
+    def _apply_scheduled_pair_suggestions(self, index):
+        queries = getattr(self, "_pair_suggest_queries", None) or {}
+        query = self._normalize_pair(queries.get(index, ""))
+
         suggestions = self._build_suggestions(index, query)
         self._update_completer_items(index, suggestions)
 
         column = self._column(index)
-        if column and suggestions and column.pair_completer is not None:
+        if (
+            column is not None
+            and suggestions
+            and column.pair_completer is not None
+            and column.pair_edit is not None
+            and column.pair_edit.hasFocus()
+        ):
             column.pair_completer.complete()
 
     def _on_pair_editing_finished(self, index):
@@ -690,31 +726,54 @@ class SpreadSelectionMixin:
             exchange_name = self._get_selected_exchange(index)
             return self._popular_for_exchange(exchange_name)
 
-        scored = []
+        exact = None
+        starts = []
+        contains = []
         for pair in pairs:
             if pair == q:
-                scored.append(((0, 0, 0.0, pair), pair))
+                exact = pair
                 continue
 
             if pair.startswith(q):
-                score = (1, len(pair) - len(q), 0.0, pair)
-                scored.append((score, pair))
+                starts.append(pair)
                 continue
 
             pos = pair.find(q)
             if pos >= 0:
-                score = (2, pos, float(len(pair)), pair)
-                scored.append((score, pair))
-                continue
+                contains.append((pos, len(pair), pair))
 
+        starts.sort(key=lambda item: (len(item), item))
+        contains.sort(key=lambda item: (item[0], item[1], item[2]))
+
+        result = []
+        if exact:
+            result.append(exact)
+        result.extend(starts)
+        result.extend(pair for _pos, _length, pair in contains)
+        if len(result) >= self.MAX_SUGGESTIONS or len(q) <= 1:
+            return result[: self.MAX_SUGGESTIONS]
+
+        # Fuzzy fallback is bounded to keep UI smooth on very large lists.
+        seed = set(result)
+        fuzzy = []
+        scanned = 0
+        first_char = q[0]
+        for pair in pairs:
+            if pair in seed:
+                continue
+            if first_char not in pair:
+                continue
+            scanned += 1
             ratio = SequenceMatcher(None, q, pair).ratio()
-            if ratio < 0.20:
+            if ratio < 0.45:
                 continue
-            score = (3, 0, 1.0 - ratio, pair)
-            scored.append((score, pair))
+            fuzzy.append((ratio, len(pair), pair))
+            if scanned >= 320:
+                break
 
-        scored.sort(key=lambda item: item[0])
-        return [pair for _score, pair in scored[: self.MAX_SUGGESTIONS]]
+        fuzzy.sort(key=lambda item: (-item[0], item[1], item[2]))
+        result.extend(pair for _ratio, _length, pair in fuzzy)
+        return result[: self.MAX_SUGGESTIONS]
 
     def _update_completer_items(self, index, items):
         column = self._column(index)

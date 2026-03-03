@@ -51,8 +51,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 6, 10, 10)
+        layout.setSpacing(4)
 
         self._create_top_controls(layout)
 
@@ -81,15 +81,16 @@ class MainWindow(QMainWindow):
     def _create_top_controls(self, parent_layout):
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(12)
+        top_row.setSpacing(10)
 
         self.left_slot = QWidget()
         top_row.addWidget(self.left_slot, 1)
 
         self.brand_header = NeonLogoWidget()
-        self.brand_header.setLogoSize(58)
-        self.brand_header.setLineY(43)
+        self.brand_header.setLogoSize(48)
+        self.brand_header.setLineY(34)
         self.brand_header.setShowLines(True)
+        self.brand_header.setFixedHeight(52)
         top_row.addWidget(self.brand_header, 0, Qt.AlignmentFlag.AlignCenter)
 
         self.right_slot = QWidget()

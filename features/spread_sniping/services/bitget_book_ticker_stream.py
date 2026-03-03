@@ -56,12 +56,13 @@ class BitgetBookTickerStream(QObject):
 
         ping_thread = self._ping_thread
         if ping_thread and ping_thread.is_alive() and threading.current_thread() is not ping_thread:
-            ping_thread.join(timeout=1.0)
+            ping_thread.join(timeout=0.05)
         self._ping_thread = None
 
         thread = self._thread
         if thread and thread.is_alive() and threading.current_thread() is not thread:
-            thread.join(timeout=1.5)
+            # Keep stop non-blocking for UI responsiveness.
+            thread.join(timeout=0.05)
         self._thread = None
 
     @staticmethod
@@ -89,7 +90,7 @@ class BitgetBookTickerStream(QObject):
     def _stop_ping_thread(self):
         ping_thread = self._ping_thread
         if ping_thread and ping_thread.is_alive() and threading.current_thread() is not ping_thread:
-            ping_thread.join(timeout=1.0)
+            ping_thread.join(timeout=0.05)
         self._ping_thread = None
 
     def _ping_loop(self):

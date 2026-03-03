@@ -157,7 +157,7 @@ class NetworkStatusBar(QFrame):
             f"""
             QFrame {{
                 background-color: {theme_color('window_bg')};
-                border-top: 2px solid {theme_color('border')};
+                border-top: 1px solid {theme_color('border')};
                 padding: 4px 10px;
             }}
             QLabel {{

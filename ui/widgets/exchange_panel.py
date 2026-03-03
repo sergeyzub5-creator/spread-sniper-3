@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from core.exchange.catalog import get_exchange_meta, normalize_exchange_code, requires_passphrase
 from core.i18n import tr
-from ui.styles import button_style, theme_color
+from ui.styles import theme_color
 from ui.widgets.exchange_badge import build_exchange_pixmap
 
 
@@ -63,16 +63,51 @@ class ExchangePanel(QFrame):
         self.retranslate_ui()
 
     def apply_theme(self):
-        self.setFrameStyle(QFrame.Shape.Box)
-        self.setLineWidth(1)
+        self.setObjectName("exchangePanel")
+        self.setFrameStyle(QFrame.Shape.NoFrame)
+        soft_border = self._rgba(theme_color("border"), 0.80)
+        soft_field_border = self._rgba(theme_color("border"), 0.54)
+        soft_hover_border = self._rgba(theme_color("accent"), 0.70)
+        panel_top = self._rgba(theme_color("surface_alt"), 0.96)
+        panel_bottom = self._rgba(theme_color("window_bg"), 0.98)
         self.setStyleSheet(
             f"""
-            QFrame {{
-                border: 1px solid {theme_color('border')};
-                border-radius: 4px;
-                background-color: {theme_color('surface')};
+            QFrame#exchangePanel {{
+                border: 2px solid {soft_border};
+                border-radius: 16px;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {panel_top},
+                    stop: 1 {panel_bottom}
+                );
                 margin: 0px;
-                padding: 3px;
+                padding: 7px;
+            }}
+            QGroupBox {{
+                border: none;
+                margin-top: 0px;
+                padding-top: 0px;
+                color: {theme_color('text_muted')};
+                font-size: 11px;
+                font-weight: 600;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 2px;
+                padding: 0 4px;
+            }}
+            QLineEdit {{
+                background-color: {theme_color('surface')};
+                color: {theme_color('text_primary')};
+                border: 1px solid {soft_field_border};
+                border-radius: 10px;
+                padding: 5px 8px;
+            }}
+            QLineEdit:hover {{
+                border-color: {soft_hover_border};
+            }}
+            QLineEdit:focus {{
+                border-color: {soft_hover_border};
             }}
         """
         )
@@ -80,17 +115,27 @@ class ExchangePanel(QFrame):
         if not hasattr(self, "status_label"):
             return
 
-        self.balance_label.setStyleSheet(self._metric_style("success", bold=True))
-        self.positions_label.setStyleSheet(self._metric_style("warning"))
+        self.balance_label.setStyleSheet(self._metric_capsule_style("success", bold=True))
+        self.positions_label.setStyleSheet(self._metric_capsule_style("warning"))
         self.testnet_check.setStyleSheet(f"color: {theme_color('warning')};")
         self._apply_status_container_style()
 
-        self.connect_btn.setStyleSheet(button_style("primary", padding="4px 9px"))
-        self.disconnect_btn.setStyleSheet(button_style("danger", padding="4px 9px"))
-        self.close_positions_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
-        self.edit_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
-        self.remove_btn.setStyleSheet(button_style("secondary", padding="4px 9px"))
-        self.cancel_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
+        self.name_label.setStyleSheet(
+            f"""
+            color: {theme_color('text_primary')};
+            background-color: {self._rgba(theme_color('window_bg'), 0.70)};
+            border: 1px solid {self._rgba(theme_color('border'), 0.52)};
+            border-radius: 10px;
+            padding: 3px 9px;
+            """
+        )
+
+        self.connect_btn.setStyleSheet(self._soft_button_style("primary"))
+        self.disconnect_btn.setStyleSheet(self._soft_button_style("danger"))
+        self.close_positions_btn.setStyleSheet(self._soft_button_style("warning"))
+        self.edit_btn.setStyleSheet(self._soft_button_style("warning"))
+        self.remove_btn.setStyleSheet(self._soft_button_style("secondary"))
+        self.cancel_btn.setStyleSheet(self._soft_button_style("secondary"))
 
         if self._last_status_snapshot is not None:
             self.update_status(dict(self._last_status_snapshot), force=True)
@@ -106,6 +151,69 @@ class ExchangePanel(QFrame):
     def _metric_style(color_key, bold=False):
         weight = "font-weight: bold;" if bold else ""
         return f"color: {theme_color(color_key)}; font-size: 11px; {weight}"
+
+    @staticmethod
+    def _metric_capsule_style(color_key, bold=False):
+        weight = "font-weight: 700;" if bold else "font-weight: 600;"
+        return (
+            f"color: {theme_color(color_key)}; font-size: 11px; {weight} "
+            f"background-color: {ExchangePanel._rgba(theme_color('window_bg'), 0.70)}; "
+            f"border: 1px solid {ExchangePanel._rgba(theme_color('border'), 0.46)}; border-radius: 10px; "
+            "padding: 4px 10px;"
+        )
+
+    @staticmethod
+    def _rgba(hex_color, alpha):
+        color = str(hex_color or "").strip()
+        if color.startswith("#") and len(color) == 7:
+            try:
+                r = int(color[1:3], 16)
+                g = int(color[3:5], 16)
+                b = int(color[5:7], 16)
+                a = max(0.0, min(1.0, float(alpha)))
+                return f"rgba({r}, {g}, {b}, {a:.3f})"
+            except ValueError:
+                return color
+        return color
+
+    def _soft_button_style(self, role):
+        roles = {
+            "primary": (
+                self._rgba(theme_color("accent"), 0.15),
+                self._rgba(theme_color("accent"), 0.54),
+                theme_color("text_primary"),
+                self._rgba(theme_color("accent"), 0.22),
+            ),
+            "danger": (
+                self._rgba(theme_color("danger"), 0.16),
+                self._rgba(theme_color("danger"), 0.54),
+                theme_color("text_primary"),
+                self._rgba(theme_color("danger"), 0.22),
+            ),
+            "warning": (
+                self._rgba(theme_color("warning"), 0.16),
+                self._rgba(theme_color("warning"), 0.58),
+                theme_color("text_primary"),
+                self._rgba(theme_color("warning"), 0.24),
+            ),
+            "secondary": (
+                self._rgba(theme_color("surface"), 0.66),
+                self._rgba(theme_color("border"), 0.46),
+                theme_color("text_muted"),
+                self._rgba(theme_color("surface_alt"), 0.88),
+            ),
+        }
+        bg, border, text, hover = roles.get(role, roles["secondary"])
+        pressed = self._rgba(theme_color("surface_alt"), 0.95)
+        return (
+            f"QPushButton {{ background-color: {bg}; color: {text}; border: 1px solid {border}; "
+            "border-radius: 10px; padding: 4px 10px; font-weight: 600; }"
+            f" QPushButton:hover {{ background-color: {hover}; border-color: {border}; }}"
+            f" QPushButton:pressed {{ background-color: {pressed}; border-color: {border}; }}"
+            f" QPushButton:disabled {{ color: {theme_color('text_muted')}; "
+            f"background-color: {self._rgba(theme_color('surface'), 0.55)}; "
+            f"border-color: {self._rgba(theme_color('border'), 0.30)}; }}"
+        )
 
     @staticmethod
     def _indicator_colors(color_key):
@@ -124,9 +232,9 @@ class ExchangePanel(QFrame):
         self.status_widget.setStyleSheet(
             f"""
             QWidget#statusWidget {{
-                background-color: {theme_color('surface_alt')};
-                border: 1px solid {theme_color('border')};
-                border-radius: 4px;
+                background-color: {self._rgba(theme_color('window_bg'), 0.72)};
+                border: 1px solid {self._rgba(theme_color('border'), 0.56)};
+                border-radius: 12px;
             }}
         """
         )
@@ -146,11 +254,11 @@ class ExchangePanel(QFrame):
             self.status_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self.status_label.setWordWrap(False)
         else:
-            self.status_widget.setMinimumWidth(108)
-            self.status_widget.setMinimumHeight(0)
-            self.status_widget.setMaximumHeight(16777215)
-            self.status_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-            self.status_label.setWordWrap(True)
+            self.status_widget.setMinimumWidth(0)
+            self.status_widget.setMinimumHeight(30)
+            self.status_widget.setMaximumHeight(30)
+            self.status_widget.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            self.status_label.setWordWrap(False)
         self.status_label.setText(text)
         self.status_label.setStyleSheet(self._status_style(text_color_key, font_px=font_px, bold=emphasize))
         self.status_label.setVisible(True)
@@ -171,11 +279,11 @@ class ExchangePanel(QFrame):
     def _init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(5)
+        header.setSpacing(8)
         self.icon_label = QLabel()
         self.icon_label.setPixmap(build_exchange_pixmap(self.exchange_type, size=30))
         self.icon_label.setFixedSize(30, 30)
@@ -190,19 +298,21 @@ class ExchangePanel(QFrame):
 
         self.status_label = QLabel(tr("status.disconnected"))
         self.status_label.setStyleSheet(self._status_style("text_muted"))
-        self.status_label.setWordWrap(True)
+        self.status_label.setWordWrap(False)
 
         self.status_indicator = StatusDot()
 
         self.status_widget = QWidget()
         self.status_widget.setObjectName("statusWidget")
-        self.status_widget.setMinimumWidth(108)
+        self.status_widget.setMinimumWidth(0)
+        self.status_widget.setMinimumHeight(30)
+        self.status_widget.setMaximumHeight(30)
+        self.status_widget.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         status_layout = QHBoxLayout(self.status_widget)
-        status_layout.setContentsMargins(8, 3, 8, 3)
+        status_layout.setContentsMargins(10, 4, 10, 4)
         status_layout.setSpacing(6)
         status_layout.addWidget(self.status_indicator)
         status_layout.addWidget(self.status_label)
-        status_layout.addStretch()
         self._apply_status_container_style()
 
         header.addWidget(self.icon_label)
@@ -214,14 +324,20 @@ class ExchangePanel(QFrame):
         self.stats_widget = QWidget()
         stats_layout = QHBoxLayout(self.stats_widget)
         stats_layout.setContentsMargins(0, 0, 0, 0)
-        stats_layout.setSpacing(5)
+        stats_layout.setSpacing(8)
         self.balance_label = QLabel(tr("label.balance_empty"))
-        self.balance_label.setStyleSheet(self._metric_style("success", bold=True))
+        self.balance_label.setStyleSheet(self._metric_capsule_style("success", bold=True))
+        self.balance_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.balance_label.setMinimumHeight(28)
         self.positions_label = QLabel(tr("label.positions_empty"))
         self.positions_label.setTextFormat(Qt.TextFormat.RichText)
-        self.positions_label.setStyleSheet(self._metric_style("warning"))
+        self.positions_label.setStyleSheet(self._metric_capsule_style("warning"))
+        self.positions_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.positions_label.setMinimumHeight(28)
         self.pnl_label = QLabel(tr("label.pnl", value="0.00"))
-        self.pnl_label.setStyleSheet(self._metric_style("text_muted", bold=True))
+        self.pnl_label.setStyleSheet(self._metric_capsule_style("text_muted", bold=True))
+        self.pnl_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.pnl_label.setMinimumHeight(28)
         stats_layout.addWidget(self.balance_label)
         stats_layout.addWidget(self.positions_label)
         stats_layout.addWidget(self.pnl_label)
@@ -272,36 +388,36 @@ class ExchangePanel(QFrame):
 
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(4)
+        button_layout.setSpacing(6)
 
         self.connect_btn = QPushButton(tr("action.connect"))
         self.connect_btn.setMinimumWidth(100)
-        self.connect_btn.setStyleSheet(button_style("primary", padding="4px 9px"))
+        self.connect_btn.setStyleSheet(self._soft_button_style("primary"))
         self.connect_btn.clicked.connect(self._on_connect)
 
         self.disconnect_btn = QPushButton(tr("action.disconnect"))
         self.disconnect_btn.setMinimumWidth(100)
-        self.disconnect_btn.setStyleSheet(button_style("danger", padding="4px 9px"))
+        self.disconnect_btn.setStyleSheet(self._soft_button_style("danger"))
         self.disconnect_btn.clicked.connect(lambda: self.disconnect_clicked.emit(self.exchange_name))
 
-        self.close_positions_btn = QPushButton(f"⚠ {tr('action.close_positions')}")
+        self.close_positions_btn = QPushButton(f"\u26A0 {tr('action.close_positions')}")
         self.close_positions_btn.setMinimumWidth(130)
-        self.close_positions_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
+        self.close_positions_btn.setStyleSheet(self._soft_button_style("warning"))
         self.close_positions_btn.clicked.connect(lambda: self.close_positions_clicked.emit(self.exchange_name))
 
         self.edit_btn = QPushButton(tr("action.edit"))
         self.edit_btn.setMinimumWidth(100)
-        self.edit_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
+        self.edit_btn.setStyleSheet(self._soft_button_style("warning"))
         self.edit_btn.clicked.connect(lambda: self.set_edit_mode(True))
 
         self.remove_btn = QPushButton(tr("action.remove"))
         self.remove_btn.setMinimumWidth(100)
-        self.remove_btn.setStyleSheet(button_style("secondary", padding="4px 9px"))
+        self.remove_btn.setStyleSheet(self._soft_button_style("secondary"))
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self.exchange_name))
 
         self.cancel_btn = QPushButton(tr("action.cancel"))
         self.cancel_btn.setMinimumWidth(100)
-        self.cancel_btn.setStyleSheet(button_style("warning", padding="4px 9px"))
+        self.cancel_btn.setStyleSheet(self._soft_button_style("secondary"))
         self.cancel_btn.clicked.connect(self._on_cancel)
 
         button_layout.addWidget(self.connect_btn)
@@ -331,7 +447,7 @@ class ExchangePanel(QFrame):
         self.connect_btn.setText(tr("action.connect"))
         self.testnet_check.setText(tr("panel.testnet"))
         self.disconnect_btn.setText(tr("action.disconnect"))
-        self.close_positions_btn.setText(f"⚠ {tr('action.close_positions')}")
+        self.close_positions_btn.setText(f"\u26A0 {tr('action.close_positions')}")
         self.edit_btn.setText(tr("action.edit"))
         self.remove_btn.setText(tr("action.remove"))
         self.cancel_btn.setText(tr("action.cancel"))
@@ -409,7 +525,7 @@ class ExchangePanel(QFrame):
             text = tr("label.pnl", value=f"{display_pnl:,.2f}")
 
         self.pnl_label.setText(text)
-        self.pnl_label.setStyleSheet(self._metric_style(color_key, bold=True))
+        self.pnl_label.setStyleSheet(self._metric_capsule_style(color_key, bold=True))
 
     def _set_positions_display(self, total_count, long_count=0, short_count=0):
         total_count = int(total_count or 0)
@@ -418,12 +534,12 @@ class ExchangePanel(QFrame):
 
         if total_count <= 0:
             self.positions_label.setText(tr("label.positions", value="0"))
-            self.positions_label.setStyleSheet(self._metric_style("warning"))
+            self.positions_label.setStyleSheet(self._metric_capsule_style("warning"))
             return
 
         if long_count <= 0 and short_count <= 0:
             self.positions_label.setText(tr("label.positions", value=str(total_count)))
-            self.positions_label.setStyleSheet(self._metric_style("warning"))
+            self.positions_label.setStyleSheet(self._metric_capsule_style("warning"))
             return
 
         parts = []
@@ -444,7 +560,7 @@ class ExchangePanel(QFrame):
             )
 
         self.positions_label.setText(tr("label.positions", value="".join(parts)))
-        self.positions_label.setStyleSheet(self._metric_style("text_primary", bold=True))
+        self.positions_label.setStyleSheet(self._metric_capsule_style("text_primary", bold=True))
 
     def _on_cancel(self):
         if self.is_new:

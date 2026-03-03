@@ -58,7 +58,7 @@ class SpreadSnipingTab(
     POPULAR_SUGGESTIONS = 12
     COLUMN_WIDTH = 250
     QUOTE_PANEL_WIDTH = 540
-    SPREAD_VALUE_HEIGHT = 92
+    SPREAD_VALUE_HEIGHT = 84
     SPREAD_VALUE_WIDTH = 250
 
     def __init__(self, exchange_manager, parent=None):
@@ -111,15 +111,15 @@ class SpreadSnipingTab(
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(0)
 
         self.container = QFrame()
         self.container.setObjectName("spreadContainer")
 
         card_layout = QVBoxLayout(self.container)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(10, 10, 10, 10)
+        card_layout.setSpacing(8)
 
         selectors_row = self._build_selectors_with_spread_row()
         quotes_row = self._build_dual_row(self._create_quote_widget)
@@ -128,7 +128,6 @@ class SpreadSnipingTab(
         card_layout.addStretch()
 
         layout.addWidget(self.container)
-        layout.addStretch()
 
         self.apply_theme()
         self.retranslate_ui()
@@ -201,29 +200,31 @@ class SpreadSnipingTab(
         left_half = QWidget()
         left_layout = QVBoxLayout(left_half)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(10)
+        left_layout.setSpacing(6)
         left_layout.addWidget(self._create_selector_button(columns[0]), 0, Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(self._create_pair_input(columns[0]), 0, Qt.AlignmentFlag.AlignCenter)
 
         right_half = QWidget()
         right_layout = QVBoxLayout(right_half)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(10)
+        right_layout.setSpacing(6)
         right_layout.addWidget(self._create_selector_button(columns[1]), 0, Qt.AlignmentFlag.AlignCenter)
         right_layout.addWidget(self._create_pair_input(columns[1]), 0, Qt.AlignmentFlag.AlignCenter)
 
         center_column = QFrame()
         center_column.setObjectName("spreadCenterColumn")
         center_column.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        center_column.setMinimumWidth(self.SPREAD_VALUE_WIDTH + 20)
+        center_column.setMinimumWidth(self.SPREAD_VALUE_WIDTH + 14)
 
         center_layout = QVBoxLayout(center_column)
-        center_layout.setContentsMargins(8, 6, 8, 6)
+        center_layout.setContentsMargins(7, 4, 7, 4)
         center_layout.setSpacing(0)
+        center_layout.addStretch()
         center_layout.addWidget(self._create_spread_value_widget(), 0, Qt.AlignmentFlag.AlignCenter)
+        center_layout.addStretch()
 
         row.addWidget(left_half, 1)
-        row.addWidget(center_column, 0)
+        row.addWidget(center_column, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(right_half, 1)
         return row
 
@@ -371,6 +372,7 @@ class SpreadSnipingTab(
 
     def apply_theme(self):
         c_surface = theme_color("surface")
+        c_window = theme_color("window_bg")
         c_border = theme_color("border")
         c_primary = theme_color("text_primary")
         c_muted = theme_color("text_muted")
@@ -392,9 +394,13 @@ class SpreadSnipingTab(
         self.container.setStyleSheet(
             f"""
             QFrame#spreadContainer {{
-                background-color: {c_surface};
-                border: none;
-                border-radius: 0px;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {self._rgba(c_alt, 0.96)},
+                    stop: 1 {self._rgba(c_window, 0.98)}
+                );
+                border: 1px solid {self._rgba(c_border, 0.58)};
+                border-radius: 12px;
             }}
             QPushButton#exchangeSelector {{
                 background: qlineargradient(

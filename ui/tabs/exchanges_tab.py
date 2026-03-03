@@ -1,6 +1,7 @@
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -41,7 +42,7 @@ class ExchangePickerDialog(QDialog):
             QListWidget {{
                 background-color: {theme_color('window_bg')};
                 border: 1px solid {theme_color('border')};
-                border-radius: 6px;
+                border-radius: 10px;
                 padding: 6px;
                 color: {theme_color('text_primary')};
                 font-size: 13px;
@@ -49,7 +50,7 @@ class ExchangePickerDialog(QDialog):
             }}
             QListWidget::item {{
                 padding: 10px 12px;
-                border-radius: 4px;
+                border-radius: 8px;
             }}
             QListWidget::item:hover {{
                 background-color: {theme_color('surface_alt')};
@@ -59,7 +60,7 @@ class ExchangePickerDialog(QDialog):
                 color: {theme_color('accent')};
             }}
             QPushButton {{
-                border-radius: 4px;
+                border-radius: 10px;
                 padding: 7px 14px;
                 min-width: 110px;
             }}
@@ -137,7 +138,7 @@ class NewExchangeDialog(QDialog):
         self.setStyleSheet(
             f"""
             QDialog {{
-                background-color: {theme_color('window_bg')};
+                background-color: {theme_color('surface')};
                 color: {theme_color('text_primary')};
             }}
         """
@@ -179,16 +180,25 @@ class ExchangesTab(QWidget):
         self.fast_trade_mode = bool(enabled)
 
     def _init_ui(self):
-        layout = QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(6)
+        self.setObjectName("exchangesTabRoot")
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(4, 4, 4, 4)
+        root_layout.setSpacing(0)
+
+        self.main_frame = QFrame()
+        self.main_frame.setObjectName("exchangesMainFrame")
+        root_layout.addWidget(self.main_frame)
+
+        layout = QVBoxLayout(self.main_frame)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
         controls = QHBoxLayout()
-        controls.setSpacing(8)
+        controls.setSpacing(10)
 
         self.add_btn = QPushButton(tr("exchanges.add_exchange"))
         self.add_btn.setMinimumWidth(140)
-        self.add_btn.setStyleSheet(button_style("primary", padding="6px 12px", bold=True))
+        self.add_btn.setStyleSheet(self._soft_button_style("primary", bold=True))
         self.add_btn.clicked.connect(self._add_new_panel)
 
         controls.addWidget(self.add_btn)
@@ -199,17 +209,17 @@ class ExchangesTab(QWidget):
 
         self.connect_all_btn = QPushButton(tr("exchanges.connect_all"))
         self.connect_all_btn.setMinimumWidth(130)
-        self.connect_all_btn.setStyleSheet(button_style("success", padding="6px 12px"))
+        self.connect_all_btn.setStyleSheet(self._soft_button_style("success"))
         self.connect_all_btn.clicked.connect(self._connect_all)
 
         self.disconnect_all_btn = QPushButton(tr("exchanges.disconnect_all"))
         self.disconnect_all_btn.setMinimumWidth(130)
-        self.disconnect_all_btn.setStyleSheet(button_style("danger", padding="6px 12px"))
+        self.disconnect_all_btn.setStyleSheet(self._soft_button_style("danger"))
         self.disconnect_all_btn.clicked.connect(self._disconnect_all)
 
-        self.close_all_positions_btn = QPushButton(f"⚠ {tr('action.close_all_positions')}")
+        self.close_all_positions_btn = QPushButton(f"\u26A0 {tr('action.close_all_positions')}")
         self.close_all_positions_btn.setMinimumWidth(170)
-        self.close_all_positions_btn.setStyleSheet(button_style("warning", padding="6px 12px", bold=True))
+        self.close_all_positions_btn.setStyleSheet(self._soft_button_style("warning", bold=True))
         self.close_all_positions_btn.clicked.connect(self._close_all_positions)
 
         connect_buttons.addWidget(self.connect_all_btn)
@@ -218,28 +228,36 @@ class ExchangesTab(QWidget):
         controls.addLayout(connect_buttons)
 
         self.scroll = QScrollArea()
+        self.scroll.setObjectName("exchangesScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._apply_scroll_style()
 
         self.container = QWidget()
+        self.container.setObjectName("exchangesPanelsContainer")
         self.panels_layout = QVBoxLayout(self.container)
-        self.panels_layout.setContentsMargins(2, 2, 2, 2)
-        self.panels_layout.setSpacing(2)
+        self.panels_layout.setContentsMargins(0, 0, 0, 0)
+        self.panels_layout.setSpacing(8)
         self.panels_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.container)
 
         layout.addLayout(controls)
         layout.addWidget(self.scroll)
-        self.setLayout(layout)
 
         self._load_existing()
 
     def _apply_scroll_style(self):
         if hasattr(self, "scroll"):
             self.scroll.setStyleSheet(
-                f"QScrollArea {{ border: 1px solid {theme_color('border')}; border-radius: 4px; "
-                f"background-color: {theme_color('scroll_bg')}; }}"
+                """
+                QScrollArea#exchangesScroll {
+                    border: none;
+                    background: transparent;
+                }
+                QScrollArea#exchangesScroll > QWidget > QWidget {
+                    background: transparent;
+                }
+                """
             )
 
     def _load_existing(self):
@@ -287,10 +305,30 @@ class ExchangesTab(QWidget):
         self.exchange_panels[name] = panel
 
     def apply_theme(self):
-        self.add_btn.setStyleSheet(button_style("primary", padding="6px 12px", bold=True))
-        self.connect_all_btn.setStyleSheet(button_style("success", padding="6px 12px"))
-        self.disconnect_all_btn.setStyleSheet(button_style("danger", padding="6px 12px"))
-        self.close_all_positions_btn.setStyleSheet(button_style("warning", padding="6px 12px", bold=True))
+        frame_top = self._rgba(theme_color("surface_alt"), 0.96)
+        frame_bottom = self._rgba(theme_color("window_bg"), 0.98)
+        frame_border = self._rgba(theme_color("border"), 0.58)
+        self.setStyleSheet(
+            f"""
+            QFrame#exchangesMainFrame {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {frame_top},
+                    stop: 1 {frame_bottom}
+                );
+                border: 1px solid {frame_border};
+                border-radius: 12px;
+            }}
+            QWidget#exchangesPanelsContainer {{
+                background: transparent;
+                border: none;
+            }}
+            """
+        )
+        self.add_btn.setStyleSheet(self._soft_button_style("primary", bold=True))
+        self.connect_all_btn.setStyleSheet(self._soft_button_style("success"))
+        self.disconnect_all_btn.setStyleSheet(self._soft_button_style("danger"))
+        self.close_all_positions_btn.setStyleSheet(self._soft_button_style("warning", bold=True))
         self._apply_scroll_style()
 
         for panel in self.exchange_panels.values():
@@ -303,17 +341,71 @@ class ExchangesTab(QWidget):
             self.new_exchange_dialog.setStyleSheet(
                 f"""
                 QDialog {{
-                    background-color: {theme_color('window_bg')};
+                    background-color: {theme_color('surface')};
                     color: {theme_color('text_primary')};
                 }}
             """
             )
 
+    @staticmethod
+    def _rgba(hex_color, alpha):
+        color = str(hex_color or "").strip()
+        if color.startswith("#") and len(color) == 7:
+            try:
+                r = int(color[1:3], 16)
+                g = int(color[3:5], 16)
+                b = int(color[5:7], 16)
+                a = max(0.0, min(1.0, float(alpha)))
+                return f"rgba({r}, {g}, {b}, {a:.3f})"
+            except ValueError:
+                return color
+        return color
+
+    def _soft_button_style(self, role, bold=False):
+        roles = {
+            "primary": (
+                self._rgba(theme_color("accent"), 0.14),
+                self._rgba(theme_color("accent"), 0.56),
+                theme_color("text_primary"),
+                self._rgba(theme_color("accent"), 0.22),
+            ),
+            "success": (
+                self._rgba(theme_color("success"), 0.14),
+                self._rgba(theme_color("success"), 0.56),
+                theme_color("text_primary"),
+                self._rgba(theme_color("success"), 0.22),
+            ),
+            "danger": (
+                self._rgba(theme_color("danger"), 0.14),
+                self._rgba(theme_color("danger"), 0.56),
+                theme_color("text_primary"),
+                self._rgba(theme_color("danger"), 0.22),
+            ),
+            "warning": (
+                self._rgba(theme_color("warning"), 0.14),
+                self._rgba(theme_color("warning"), 0.58),
+                theme_color("text_primary"),
+                self._rgba(theme_color("warning"), 0.24),
+            ),
+        }
+        bg, border, text, hover = roles.get(role, roles["primary"])
+        pressed = self._rgba(theme_color("surface_alt"), 0.96)
+        weight = "700" if bold else "600"
+        return (
+            f"QPushButton {{ background-color: {bg}; color: {text}; border: 1px solid {border}; "
+            f"border-radius: 11px; padding: 6px 12px; font-weight: {weight}; }}"
+            f" QPushButton:hover {{ background-color: {hover}; border-color: {border}; }}"
+            f" QPushButton:pressed {{ background-color: {pressed}; border-color: {border}; }}"
+            f" QPushButton:disabled {{ color: {theme_color('text_muted')}; "
+            f"background-color: {self._rgba(theme_color('surface'), 0.55)}; "
+            f"border-color: {self._rgba(theme_color('border'), 0.32)}; }}"
+        )
+
     def retranslate_ui(self):
         self.add_btn.setText(tr("exchanges.add_exchange"))
         self.connect_all_btn.setText(tr("exchanges.connect_all"))
         self.disconnect_all_btn.setText(tr("exchanges.disconnect_all"))
-        self.close_all_positions_btn.setText(f"⚠ {tr('action.close_all_positions')}")
+        self.close_all_positions_btn.setText(f"\u26A0 {tr('action.close_all_positions')}")
 
         for panel in self.exchange_panels.values():
             panel.retranslate_ui()
@@ -594,7 +686,7 @@ class ExchangesTab(QWidget):
     def _on_close_all_positions_finished(self):
         self.close_positions_worker = None
         self._set_bulk_controls_enabled(True)
-        self.close_all_positions_btn.setText(f"⚠ {tr('action.close_all_positions')}")
+        self.close_all_positions_btn.setText(f"\u26A0 {tr('action.close_all_positions')}")
 
     def _on_panel_close_positions(self, name):
         if self.close_positions_worker is not None:
