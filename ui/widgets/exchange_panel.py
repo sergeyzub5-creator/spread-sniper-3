@@ -13,7 +13,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exchange.catalog import get_exchange_meta, normalize_exchange_code, requires_passphrase
+from core.exchange.catalog import (
+    get_exchange_meta,
+    normalize_exchange_code,
+    requires_passphrase,
+    supports_testnet,
+)
 from core.i18n import tr
 from core.utils.logger import get_logger
 from ui.styles import theme_color
@@ -56,6 +61,7 @@ class ExchangePanel(QFrame):
         self.exchange_name = exchange_name
         self.exchange_type = normalize_exchange_code(exchange_type)
         self.exchange_meta = get_exchange_meta(self.exchange_type)
+        self.supports_testnet = supports_testnet(self.exchange_type)
         self.is_connected = False
         self.testnet = False
         self.is_new = is_new
@@ -121,7 +127,8 @@ class ExchangePanel(QFrame):
 
         self.balance_label.setStyleSheet(self._metric_capsule_style("success", bold=True))
         self.positions_label.setStyleSheet(self._metric_capsule_style("warning"))
-        self.testnet_check.setStyleSheet(f"color: {theme_color('warning')};")
+        testnet_color = theme_color("warning") if self.supports_testnet else theme_color("text_muted")
+        self.testnet_check.setStyleSheet(f"color: {testnet_color};")
         self._apply_status_container_style()
 
         self.name_label.setStyleSheet(
@@ -436,6 +443,7 @@ class ExchangePanel(QFrame):
 
         self.setLayout(layout)
         self._update_passphrase_hint()
+        self._apply_testnet_support_state()
         self._apply_metric_width_stability()
         self._update_ui_state()
 
@@ -444,6 +452,23 @@ class ExchangePanel(QFrame):
             self.passphrase_input.setPlaceholderText(tr("panel.passphrase_required"))
         else:
             self.passphrase_input.setPlaceholderText(tr("panel.passphrase_optional"))
+
+    def _apply_testnet_support_state(self):
+        self.supports_testnet = supports_testnet(self.exchange_type)
+        if self.supports_testnet:
+            self.testnet_check.setEnabled(True)
+            self.testnet_check.setToolTip("")
+            return
+
+        if self.testnet_check.isChecked():
+            self.testnet_check.blockSignals(True)
+            self.testnet_check.setChecked(False)
+            self.testnet_check.blockSignals(False)
+        self.testnet = False
+        self.testnet_check.setEnabled(False)
+        self.testnet_check.setToolTip(
+            tr("panel.testnet_not_supported_tooltip", exchange=self.exchange_meta["base_name"])
+        )
 
     def retranslate_ui(self):
         self.exchange_meta = get_exchange_meta(self.exchange_type)
@@ -458,6 +483,7 @@ class ExchangePanel(QFrame):
         self.remove_btn.setText(tr("action.remove"))
         self.cancel_btn.setText(tr("action.cancel"))
         self._update_passphrase_hint()
+        self._apply_testnet_support_state()
         self._apply_metric_width_stability()
 
         if self.is_new:
@@ -625,6 +651,9 @@ class ExchangePanel(QFrame):
         self.remove_clicked.emit(self.exchange_name)
 
     def _on_testnet_changed(self, state):
+        if not self.supports_testnet:
+            self.testnet = False
+            return
         self.testnet = state == Qt.CheckState.Checked.value
 
     @staticmethod
@@ -664,6 +693,12 @@ class ExchangePanel(QFrame):
                 self.exchange_name,
             )
             self._show_input_error(tr("panel.error.ascii_key"))
+            return
+
+        if self.testnet and not self.supports_testnet:
+            self._show_input_error(
+                tr("panel.error.testnet_not_supported", exchange=self.exchange_meta["base_name"])
+            )
             return
 
         params = {
@@ -804,6 +839,14 @@ class ExchangePanel(QFrame):
             self.api_secret_input.setText(params["api_secret"])
         if params.get("api_passphrase"):
             self.passphrase_input.setText(params["api_passphrase"])
-        self.testnet_check.setChecked(params.get("testnet", False))
-        self.testnet = params.get("testnet", False)
+        saved_testnet = bool(params.get("testnet", False))
+        if saved_testnet and not self.supports_testnet:
+            logger.warning(
+                "[TRACE] exchange_panel.saved_testnet_unsupported | exchange=%s | exchange_type=%s",
+                self.exchange_name,
+                self.exchange_type,
+            )
+            saved_testnet = False
+        self.testnet_check.setChecked(saved_testnet)
+        self.testnet = saved_testnet
 

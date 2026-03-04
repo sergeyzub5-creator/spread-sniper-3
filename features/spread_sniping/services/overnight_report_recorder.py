@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QTimer
 
-from core.utils.logger import get_logger
+from core.utils.logger import get_logger, get_runtime_log_path
 
 logger = get_logger(__name__)
 
@@ -53,11 +53,7 @@ class OvernightReportRecorder(QObject):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         logs_dir = os.path.join(project_root, "logs")
         os.makedirs(logs_dir, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.report_path = os.path.join(logs_dir, f"overnight_runtime_report_{stamp}.jsonl")
-        self.status_path = os.path.join(logs_dir, "overnight_runtime_status.json")
-
-        self._fp = open(self.report_path, "a", encoding="utf-8")
+        self.report_path = get_runtime_log_path()
         self._write_event("session_started", version=1, report_path=self.report_path)
 
         self._snapshot_timer = QTimer(self)
@@ -119,8 +115,7 @@ class OvernightReportRecorder(QObject):
             "payload": dict(payload or {}),
         }
         try:
-            self._fp.write(json.dumps(row, ensure_ascii=False) + "\n")
-            self._fp.flush()
+            logger.info("[OVERNIGHT] %s", json.dumps(row, ensure_ascii=False))
             self._counts["events"] = int(self._counts.get("events", 0) or 0) + 1
         except Exception:
             logger.exception("Overnight recorder write failed")
@@ -186,18 +181,13 @@ class OvernightReportRecorder(QObject):
         tab = self._tab
         running = bool(getattr(getattr(tab, "_strategy_state", None), "is_running", False)) if tab is not None else False
         payload = {
-            "ts": _utc_iso(),
             "started_at": self._started_iso,
             "report_path": self.report_path,
             "elapsed_sec": max(0.0, time.monotonic() - float(self._started_mono)),
             "strategy_running": running,
             "counts": dict(self._counts),
         }
-        try:
-            with open(self.status_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-        except Exception:
-            logger.exception("Overnight recorder status write failed")
+        self._write_event("status", **payload)
 
     def stop(self, reason="shutdown"):
         if self._stopped:
@@ -218,26 +208,16 @@ class OvernightReportRecorder(QObject):
         except Exception:
             pass
         try:
-            with open(self.status_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "ts": _utc_iso(),
-                        "phase": "done",
-                        "started_at": self._started_iso,
-                        "report_path": self.report_path,
-                        "elapsed_sec": max(0.0, time.monotonic() - float(self._started_mono)),
-                        "counts": dict(self._counts),
-                    },
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            self._write_event(
+                "status",
+                phase="done",
+                started_at=self._started_iso,
+                report_path=self.report_path,
+                elapsed_sec=max(0.0, time.monotonic() - float(self._started_mono)),
+                counts=dict(self._counts),
+            )
         except Exception:
             pass
         self._stopped = True
-        try:
-            self._fp.close()
-        except Exception:
-            pass
         self._set_indicator(False)
         logger.info("Overnight recorder stopped: %s", self.report_path)

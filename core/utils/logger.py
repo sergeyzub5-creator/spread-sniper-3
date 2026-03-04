@@ -1,15 +1,19 @@
 import logging
 import os
 import sys
-from datetime import datetime
 
 
-class _TraceOnlyFilter(logging.Filter):
-    def filter(self, record):
-        try:
-            return str(record.getMessage()).startswith("[TRACE]")
-        except Exception:
-            return False
+RUNTIME_LOG_FILENAME = "runtime_report.log"
+
+
+def get_logs_dir():
+    logs_dir = os.path.join(os.getcwd(), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    return logs_dir
+
+
+def get_runtime_log_path():
+    return os.path.join(get_logs_dir(), RUNTIME_LOG_FILENAME)
 
 
 class _NoTraceFilter(logging.Filter):
@@ -38,23 +42,13 @@ def setup_logger(level=logging.INFO):
     logger.addHandler(console)
 
     try:
-        logs_dir = os.path.join(os.getcwd(), "logs")
-        os.makedirs(logs_dir, exist_ok=True)
-
         file_handler = logging.FileHandler(
-            os.path.join(logs_dir, f"debug_{datetime.now().strftime('%Y%m%d')}.log"),
+            get_runtime_log_path(),
+            mode="w",
             encoding="utf-8",
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-
-        trace_handler = logging.FileHandler(
-            os.path.join(logs_dir, f"trace_{datetime.now().strftime('%Y%m%d')}.log"),
-            encoding="utf-8",
-        )
-        trace_handler.setFormatter(formatter)
-        trace_handler.addFilter(_TraceOnlyFilter())
-        logger.addHandler(trace_handler)
     except OSError:
         # Keep console logging even if file logging cannot be initialized.
         pass

@@ -6,6 +6,8 @@ from features.spread_sniping.models import SpreadStrategyConfig, SpreadStrategyS
 class SpreadStrategyEngine:
     """Signal evaluation engine for spread strategy (stage 2, no order execution)."""
 
+    POSITION_EPSILON = 1e-8
+
     @staticmethod
     def _to_float(value):
         try:
@@ -82,8 +84,8 @@ class SpreadStrategyEngine:
         if target_qty is not None and step_qty is not None:
             step_qty = min(step_qty, target_qty)
 
-        active_qty = float(st.active_hedged_size or 0.0)
-        has_hedged_position = active_qty > 0.0
+        active_qty = max(0.0, float(st.active_hedged_size or 0.0))
+        has_hedged_position = active_qty > float(self.POSITION_EPSILON)
         has_target = target_qty is not None and target_qty > 0.0
         need_entry_fill = has_target and (active_qty + 1e-12) < float(target_qty)
 

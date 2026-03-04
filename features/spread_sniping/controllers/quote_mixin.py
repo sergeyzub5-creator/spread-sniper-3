@@ -1,6 +1,7 @@
 from core.exchange.catalog import normalize_exchange_code
 from core.i18n import tr
 from core.utils.thread_pool import ThreadManager, Worker
+from PySide6.QtCore import QTimer
 
 
 class SpreadQuoteMixin:
@@ -194,7 +195,44 @@ class SpreadQuoteMixin:
                     stream.stop(wait=wait)
                 except TypeError:
                     stream.stop()
+        self._stop_quote_polling(index)
         column.quote_stream_state = None
+
+    def _start_quote_polling(self, index):
+        column = self._column(index)
+        if column is None:
+            return
+        timer = getattr(column, "quote_poll_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setInterval(850)
+            timer.timeout.connect(lambda idx=index: self._on_quote_poll_tick(idx))
+            column.quote_poll_timer = timer
+        if not timer.isActive():
+            timer.start()
+
+    def _stop_quote_polling(self, index):
+        column = self._column(index)
+        if column is None:
+            return
+        timer = getattr(column, "quote_poll_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+
+    def _on_quote_poll_tick(self, index):
+        column = self._column(index)
+        if column is None:
+            return
+        state = column.quote_stream_state
+        if not state:
+            return
+        if column.quote_snapshot_worker is not None:
+            return
+        exchange_name = state[0]
+        pair = state[1]
+        if not exchange_name or not pair:
+            return
+        self._start_quote_snapshot(index, exchange_name, pair)
 
     def _sync_quote_stream(self, index):
         column = self._column(index)
@@ -218,7 +256,7 @@ class SpreadQuoteMixin:
             return
 
         exchange_type = normalize_exchange_code(getattr(exchange, "exchange_type", None))
-        if exchange_type not in {"binance", "bitget"} or not exchange.is_connected:
+        if exchange_type not in {"binance", "bitget", "bybit"} or not exchange.is_connected:
             self._stop_quote_stream(index)
             self._set_quote_state(index, "empty")
             return
@@ -244,7 +282,10 @@ class SpreadQuoteMixin:
         if stream is None:
             stream = column.quote_stream
         if stream is not None:
+            self._stop_quote_polling(index)
             stream.start(pair, testnet=bool(getattr(exchange, "testnet", False)))
+        else:
+            self._start_quote_polling(index)
 
     def _start_quote_snapshot(self, index, exchange_name, pair):
         worker = Worker(self._fetch_quote_snapshot_task, exchange_name, pair)

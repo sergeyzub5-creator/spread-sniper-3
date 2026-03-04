@@ -16,6 +16,8 @@ class MEXCExchange(BaseExchange):
 
     def __init__(self, name, api_key=None, api_secret=None, testnet=False):
         super().__init__(name, api_key, api_secret, testnet)
+        # MEXC futures connector currently supports only production API.
+        # We intentionally do not route demo flag to production to avoid mixing modes.
         self.base_url = "https://contract.mexc.com"
         self.timeout = 10
         self.session = requests.Session()
@@ -146,6 +148,12 @@ class MEXCExchange(BaseExchange):
 
     def connect(self):
         logger.info("%s запрос на подключение", self.name)
+
+        if bool(self.testnet):
+            msg = "Для MEXC демо-режим в этом коннекторе пока не поддержан. Снимите галочку 'Демо'."
+            self._emit_error(msg)
+            logger.error("%s: %s", self.name, msg)
+            return False
 
         if not self.api_key or not self.api_secret:
             msg = "Для MEXC нужны API ключ и API секрет"

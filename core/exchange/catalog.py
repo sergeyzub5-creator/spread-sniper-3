@@ -21,6 +21,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "BN",
         "color": "#F3BA2F",
         "requires_passphrase": False,
+        "supports_testnet": True,
     },
     "bitget": {
         "code": "bitget",
@@ -29,6 +30,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "BG",
         "color": "#00C1D4",
         "requires_passphrase": True,
+        "supports_testnet": True,
     },
     "bybit": {
         "code": "bybit",
@@ -37,6 +39,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "BY",
         "color": "#F7A600",
         "requires_passphrase": False,
+        "supports_testnet": True,
     },
     "okx": {
         "code": "okx",
@@ -45,6 +48,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "OK",
         "color": "#111111",
         "requires_passphrase": True,
+        "supports_testnet": True,
     },
     "mexc": {
         "code": "mexc",
@@ -53,6 +57,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "MX",
         "color": "#2EC5B6",
         "requires_passphrase": False,
+        "supports_testnet": False,
     },
     "kucoin": {
         "code": "kucoin",
@@ -61,6 +66,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "KC",
         "color": "#1FC7A3",
         "requires_passphrase": True,
+        "supports_testnet": True,
     },
     "gate": {
         "code": "gate",
@@ -69,6 +75,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "GT",
         "color": "#2F54EB",
         "requires_passphrase": False,
+        "supports_testnet": True,
     },
     "bingx": {
         "code": "bingx",
@@ -77,6 +84,7 @@ EXCHANGE_CATALOG: Dict[str, dict] = {
         "short": "BX",
         "color": "#005BFF",
         "requires_passphrase": False,
+        "supports_testnet": True,
     },
 }
 
@@ -111,6 +119,7 @@ def get_exchange_meta(exchange_code: str | None) -> dict:
         "short": "EX",
         "color": "#6C7A89",
         "requires_passphrase": False,
+        "supports_testnet": False,
     }
 
 
@@ -121,3 +130,7 @@ def is_known_exchange_type(exchange_code: str | None) -> bool:
 
 def requires_passphrase(exchange_code: str | None) -> bool:
     return bool(get_exchange_meta(exchange_code).get("requires_passphrase", False))
+
+
+def supports_testnet(exchange_code: str | None) -> bool:
+    return bool(get_exchange_meta(exchange_code).get("supports_testnet", False))

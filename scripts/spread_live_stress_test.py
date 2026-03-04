@@ -201,8 +201,7 @@ class SpreadLiveStressRunner(QObject):
         self.tab._set_strategy_status = set_status_hook
 
     def _prepare_log_tail_tracking(self):
-        day = datetime.now().strftime("%Y%m%d")
-        path = os.path.join(PROJECT_ROOT, "logs", f"debug_{day}.log")
+        path = os.path.join(PROJECT_ROOT, "logs", "runtime_report.log")
         self._debug_log_path = path
         try:
             self._debug_log_offset = os.path.getsize(path)
@@ -1119,8 +1118,7 @@ def main():
     app.setApplicationName(tr("app.title"))
     app.setStyle("Fusion")
 
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = args.report_path.strip() or os.path.join(PROJECT_ROOT, "logs", f"spread_stress_report_{now}.json")
+    report_path = args.report_path.strip() or os.path.join(PROJECT_ROOT, "logs", "spread_stress_report.json")
     status_path = args.status_path.strip() or os.path.join(PROJECT_ROOT, "logs", "spread_stress_status.json")
 
     runner = SpreadLiveStressRunner(

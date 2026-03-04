@@ -8,6 +8,30 @@ logger = get_logger(__name__)
 
 
 class SpreadStrategyRuntimeExecutionMixin:
+    def _runtime_cap_entry_qty_by_notional(self, qty, expensive_price):
+        requested = float(self._to_float(qty) or 0.0)
+        if requested <= 0:
+            return 0.0
+        limit_usdt = float(self._to_float(getattr(self._strategy_config, "target_notional_usdt", 0.0)) or 0.0)
+        price = float(self._to_float(expensive_price) or 0.0)
+        if limit_usdt <= 0 or price <= 0:
+            return requested
+        active_qty = float(self._to_float(getattr(self._strategy_state, "active_hedged_size", 0.0)) or 0.0)
+        max_qty = limit_usdt / price
+        remaining = max(0.0, float(max_qty) - float(active_qty))
+        capped = min(requested, remaining)
+        if capped + 1e-12 < requested:
+            self._trace_runtime(
+                "entry_cap_applied",
+                requested_qty=f"{requested:.8f}",
+                capped_qty=f"{capped:.8f}",
+                active_qty=f"{active_qty:.8f}",
+                max_qty=f"{max_qty:.8f}",
+                expensive_price=f"{price:.8f}",
+                limit_usdt=f"{limit_usdt:.2f}",
+            )
+        return max(0.0, float(capped))
+
     def _on_strategy_force_close_clicked(self):
         if self._strategy_cycle_busy:
             self._trace_runtime("force_close_skip", reason="strategy_busy")
@@ -80,6 +104,7 @@ class SpreadStrategyRuntimeExecutionMixin:
         spread_state = self._calculate_spread_state()
         spread_state = self._runtime_apply_ack_throttle_to_spread(spread_state)
         self._sync_strategy_state_from_spread(spread_state)
+        self._refresh_strategy_session_runtime(reason="loop_tick", force=False)
         self._clear_resolved_transient_notice()
         if self._maybe_start_emergency_leg_close():
             return
@@ -120,13 +145,11 @@ class SpreadStrategyRuntimeExecutionMixin:
             buy_index = self._strategy_state.exit_buy_index
             sell_index = self._strategy_state.exit_sell_index
 
-        if not action or qty <= 0:
-            return
-
         buy_exchange = ""
         buy_pair = ""
         sell_exchange = ""
         sell_pair = ""
+        expensive_price_for_cap = None
 
         if action == "entry":
             stale_indexes = self._runtime_entry_stale_quote_indexes()
@@ -161,6 +184,7 @@ class SpreadStrategyRuntimeExecutionMixin:
             buy_pair = buy_col.selected_pair
             sell_exchange = sell_col.selected_exchange
             sell_pair = sell_col.selected_pair
+            expensive_price_for_cap = self._to_float(getattr(sell_col, "quote_bid", None))
         else:
             # Exit legs must be opposite to entry:
             # close long on buy-exchange with SELL, close short on sell-exchange with BUY.
@@ -170,14 +194,30 @@ class SpreadStrategyRuntimeExecutionMixin:
             sell_pair = str(self._strategy_state.position_buy_pair or "").strip()
             buy_index = self._strategy_state.position_sell_index
             sell_index = self._strategy_state.position_buy_index
+            leg1_qty = float(self._to_float(getattr(self._strategy_state, "leg1_qty", 0.0)) or 0.0)
+            leg2_qty = float(self._to_float(getattr(self._strategy_state, "leg2_qty", 0.0)) or 0.0)
+            active_qty = float(self._to_float(getattr(self._strategy_state, "active_hedged_size", 0.0)) or 0.0)
+            tol = float(self._strategy_reconcile_tolerance())
+            if max(leg1_qty, leg2_qty, active_qty) <= tol:
+                # Flat runtime state: exit signal can briefly appear from stale/transition values.
+                # Normalize state and keep loop running.
+                self._trace_runtime(
+                    "loop_exit_skip_flat_state",
+                    leg1_qty=f"{leg1_qty:.12f}",
+                    leg2_qty=f"{leg2_qty:.12f}",
+                    active_qty=f"{active_qty:.12f}",
+                    tol=f"{tol:.12f}",
+                )
+                self._strategy_state.active_hedged_size = 0.0
+                self._clear_position_context()
+                self._clear_strategy_status()
+                self._refresh_spread_display()
+                return
             if not buy_exchange or not sell_exchange or not buy_pair or not sell_pair:
                 self._trace_runtime("loop_stop", reason="position_context_missing_on_exit")
                 self._set_strategy_status(tr("spread.strategy.error.position_context_missing"))
                 self._stop_strategy_loop(reason="position_context_missing_on_exit")
                 return
-            leg1_qty = float(self._to_float(getattr(self._strategy_state, "leg1_qty", 0.0)) or 0.0)
-            leg2_qty = float(self._to_float(getattr(self._strategy_state, "leg2_qty", 0.0)) or 0.0)
-            tol = float(self._strategy_reconcile_tolerance())
             if max(leg1_qty, leg2_qty) <= tol:
                 # Local runtime context still has active size, but both actual legs are flat.
                 # Skip redundant reduce-only submits and normalize state immediately.
@@ -192,6 +232,11 @@ class SpreadStrategyRuntimeExecutionMixin:
                 self._clear_strategy_status()
                 self._refresh_spread_display()
                 return
+
+        if action == "entry":
+            qty = self._runtime_cap_entry_qty_by_notional(qty, expensive_price_for_cap)
+        if not action or qty <= 0:
+            return
 
         buy_best_price_hint = self._resolve_strategy_best_price_hint(buy_index, "buy")
         sell_best_price_hint = self._resolve_strategy_best_price_hint(sell_index, "sell")
@@ -436,6 +481,7 @@ class SpreadStrategyRuntimeExecutionMixin:
         self._clear_strategy_status()
         self._refresh_spread_display()
         self._refresh_strategy_exchanges_after_step(data)
+        self._refresh_strategy_session_runtime(reason=f"step_{action}", force=True)
 
     def _refresh_strategy_exchanges_after_step(self, step_result):
         names = set()
@@ -516,6 +562,7 @@ class SpreadStrategyRuntimeExecutionMixin:
                 "second_leg": data.get("sell_close_leg") or {},
             }
         )
+        self._refresh_strategy_session_runtime(reason="force_close_result", force=True)
 
     def _on_strategy_force_close_error(self, error_text):
         self._trace_runtime("force_close_task_error", error=str(error_text or "").strip() or "unknown")

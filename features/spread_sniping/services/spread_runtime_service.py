@@ -12,6 +12,13 @@ from core.exchange.adapters.bitget import (
     place_spread_limit_fok_order as place_bitget_spread_order,
     place_spread_market_reduce_order as place_bitget_spread_market_reduce,
 )
+from core.exchange.adapters.bybit import (
+    fetch_spread_book_ticker_snapshot as fetch_bybit_book_ticker_snapshot,
+    get_spread_qty_constraints as get_bybit_qty_constraints,
+    load_spread_account_pairs as load_bybit_account_pairs,
+    place_spread_limit_fok_order as place_bybit_spread_order,
+    place_spread_market_reduce_order as place_bybit_spread_market_reduce,
+)
 from core.exchange.catalog import normalize_exchange_code
 import math
 import time
@@ -38,6 +45,14 @@ class SpreadRuntimeService:
             "qty_constraints": get_bitget_qty_constraints,
             "place_order": place_bitget_spread_order,
             "place_market_reduce": place_bitget_spread_market_reduce,
+            "strict": True,
+        },
+        "bybit": {
+            "load_pairs": load_bybit_account_pairs,
+            "fetch_quote": fetch_bybit_book_ticker_snapshot,
+            "qty_constraints": get_bybit_qty_constraints,
+            "place_order": place_bybit_spread_order,
+            "place_market_reduce": place_bybit_spread_market_reduce,
             "strict": True,
         },
     }

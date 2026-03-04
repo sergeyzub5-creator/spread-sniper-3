@@ -55,6 +55,7 @@ class SpreadColumnContext:
 
     quote_stream: Any = None
     quote_streams: dict = field(default_factory=dict)
+    quote_poll_timer: Any = None
     quote_snapshot_worker: Any = None
     order_book_stream: Any = None
     order_book_snapshot_worker: Any = None

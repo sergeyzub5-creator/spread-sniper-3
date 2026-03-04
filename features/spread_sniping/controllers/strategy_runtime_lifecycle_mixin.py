@@ -52,6 +52,8 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._strategy_auto_restart_attempt = 0
         self._strategy_auto_restart_last_reason = ""
         self._strategy_manual_stop_requested = False
+        self._strategy_session_refresh_min_sec = 1.0
+        self._strategy_session_last_refresh_ts = 0.0
 
         self._strategy_timer = QTimer(self)
         self._strategy_timer.setInterval(self.STRATEGY_LOOP_INTERVAL_MS)
@@ -168,6 +170,53 @@ class SpreadStrategyRuntimeLifecycleMixin:
             pnl=state.session_pnl_balance,
         )
 
+    def _refresh_strategy_session_runtime(self, reason="runtime", force=False):
+        state = getattr(self, "_strategy_state", None)
+        if state is None:
+            return False
+        start_balance = self._to_float(getattr(state, "session_start_balance", None))
+        if start_balance is None:
+            return False
+
+        now_ts = time.monotonic()
+        min_sec = max(0.2, float(getattr(self, "_strategy_session_refresh_min_sec", 1.0) or 1.0))
+        last_ts = float(getattr(self, "_strategy_session_last_refresh_ts", 0.0) or 0.0)
+        if (not force) and (now_ts - last_ts) < min_sec:
+            return False
+        self._strategy_session_last_refresh_ts = now_ts
+
+        names = self._strategy_session_exchange_names()
+        total, used = self._strategy_sum_exchange_balances(names)
+        if total is None:
+            return False
+
+        prev_end = self._to_float(getattr(state, "session_end_balance", None))
+        prev_pnl = self._to_float(getattr(state, "session_pnl_balance", None))
+        pnl = float(total) - float(start_balance)
+        state.session_end_balance = float(total)
+        state.session_pnl_balance = float(pnl)
+        if used:
+            state.session_exchange_1 = used[0] if len(used) > 0 else None
+            state.session_exchange_2 = used[1] if len(used) > 1 else None
+
+        changed = (
+            prev_end is None
+            or prev_pnl is None
+            or abs(float(prev_end) - float(total)) >= 1e-9
+            or abs(float(prev_pnl) - float(pnl)) >= 1e-9
+        )
+        if changed:
+            self._trace_runtime(
+                "session_runtime_update",
+                reason=str(reason or "runtime"),
+                end_balance=state.session_end_balance,
+                pnl=state.session_pnl_balance,
+            )
+            update_process = getattr(self, "_update_strategy_process_label", None)
+            if callable(update_process):
+                update_process()
+        return changed
+
     def _build_selection_signature(self):
         left = self._column(1)
         right = self._column(2)
@@ -266,6 +315,7 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._strategy_auto_restart_attempt = 0
         self._strategy_auto_restart_last_reason = ""
         self._strategy_manual_stop_requested = False
+        self._strategy_session_last_refresh_ts = 0.0
         runtime_service = getattr(self, "_runtime_service", None)
         runtime_shutdown = getattr(runtime_service, "shutdown", None)
         if callable(runtime_shutdown):
@@ -322,6 +372,10 @@ class SpreadStrategyRuntimeLifecycleMixin:
             self._update_strategy_state_label()
             return
 
+        # Before start, refresh observed legs while runtime is still stopped.
+        # This clears stale active qty from previous sessions.
+        self._sync_strategy_observed_legs()
+
         same_pos_error = self._ensure_same_position_context()
         if same_pos_error:
             self._trace_runtime("start_rejected", reason=same_pos_error)
@@ -332,6 +386,12 @@ class SpreadStrategyRuntimeLifecycleMixin:
         self._clear_strategy_status()
         if float(self._strategy_state.active_hedged_size or 0.0) <= 1e-12:
             self._clear_position_context()
+            self._strategy_state.target_qty = None
+            self._strategy_state.step_qty = None
+            self._strategy_state.remaining_entry_qty = 0.0
+            self._strategy_state.remaining_exit_qty = 0.0
+            self._strategy_state.next_entry_qty = 0.0
+            self._strategy_state.next_exit_qty = 0.0
         self._strategy_defer_session_finalize = False
         self._capture_strategy_session_start()
         now_ts = time.monotonic()

@@ -20,7 +20,7 @@ class SpreadStrategyExecutionService:
             return 0.0
         return max(0.0, float(numeric))
 
-    def _resolve_target_qty(self, spread_state, config):
+    def _resolve_target_qty(self, spread_state, config, runtime_state):
         target_qty = self._to_float((spread_state or {}).get("target_qty"))
         if target_qty is not None and target_qty > 0:
             return float(target_qty)
@@ -28,13 +28,20 @@ class SpreadStrategyExecutionService:
         cfg = config if isinstance(config, SpreadStrategyConfig) else SpreadStrategyConfig()
         expensive_price = self._to_float((spread_state or {}).get("expensive_trade_price"))
         if expensive_price is None or expensive_price <= 0:
+            state = runtime_state if isinstance(runtime_state, SpreadStrategyState) else SpreadStrategyState()
+            fallback_target = self._to_float(getattr(state, "target_qty", None))
+            if fallback_target is not None and fallback_target > 0 and bool(getattr(state, "is_running", False)):
+                return float(fallback_target)
+            active_qty = self._clamp_non_negative(getattr(state, "active_hedged_size", 0.0))
+            if active_qty > 0:
+                return float(active_qty)
             return None
         target_notional = self._to_float(cfg.target_notional_usdt)
         if target_notional is None or target_notional <= 0:
             return None
         return float(target_notional) / float(expensive_price)
 
-    def _resolve_step_qty(self, spread_state, config, target_qty):
+    def _resolve_step_qty(self, spread_state, config, target_qty, runtime_state):
         step_qty = self._to_float((spread_state or {}).get("step_qty"))
         if step_qty is not None and step_qty > 0:
             if target_qty is None:
@@ -44,6 +51,17 @@ class SpreadStrategyExecutionService:
         cfg = config if isinstance(config, SpreadStrategyConfig) else SpreadStrategyConfig()
         expensive_price = self._to_float((spread_state or {}).get("expensive_trade_price"))
         if expensive_price is None or expensive_price <= 0:
+            state = runtime_state if isinstance(runtime_state, SpreadStrategyState) else SpreadStrategyState()
+            fallback_step = self._to_float(getattr(state, "step_qty", None))
+            if fallback_step is not None and fallback_step > 0:
+                if target_qty is None:
+                    return float(fallback_step)
+                return min(float(fallback_step), float(target_qty))
+            active_qty = self._clamp_non_negative(getattr(state, "active_hedged_size", 0.0))
+            if active_qty > 0:
+                if target_qty is None:
+                    return float(active_qty)
+                return min(float(active_qty), float(target_qty))
             return None
         step_notional = self._to_float(cfg.step_notional_usdt)
         if step_notional is None or step_notional <= 0:
@@ -59,8 +77,8 @@ class SpreadStrategyExecutionService:
         cfg = config if isinstance(config, SpreadStrategyConfig) else SpreadStrategyConfig()
         state = runtime_state if isinstance(runtime_state, SpreadStrategyState) else SpreadStrategyState()
 
-        target_qty = self._resolve_target_qty(spread, cfg)
-        step_qty = self._resolve_step_qty(spread, cfg, target_qty)
+        target_qty = self._resolve_target_qty(spread, cfg, state)
+        step_qty = self._resolve_step_qty(spread, cfg, target_qty, state)
         active_qty = self._clamp_non_negative(getattr(state, "active_hedged_size", 0.0))
 
         if target_qty is None or target_qty <= 0:

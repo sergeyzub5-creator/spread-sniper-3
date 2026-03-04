@@ -117,15 +117,11 @@ class SpreadStrategyRuntimeConstraintsMixin:
             active_qty=active_qty,
             remaining_entry=remaining_entry,
             min_required=required_min,
+            normalized_as_complete=True,
         )
-        self._set_strategy_status(
-            tr(
-                "spread.strategy.warn.entry_locked_by_min",
-                remaining=f"{remaining_entry:.6f}",
-                min_qty=f"{required_min:.6f}",
-            ),
-            code="entry_locked",
-        )
+        # Normal behavior: if remaining qty is below exchange minimum/step,
+        # treat current active size as fully collected target without warning.
+        self._clear_strategy_status()
         self._refresh_spread_display()
         self._refresh_strategy_exchanges_after_step(data)
         self._update_strategy_state_label()
